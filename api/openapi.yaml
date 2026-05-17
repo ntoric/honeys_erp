@@ -1,0 +1,4868 @@
+openapi: 3.0.3
+info:
+  title: Retail POS Billing & Accounting API
+  description: |
+    Comprehensive REST API specification for a full-featured Retail POS Billing and Accounting
+    software system. Covers all modules including: POS transactions, inventory, GST/tax compliance,
+    accounting, customer management, vendor management, purchase orders, reporting, user management,
+    webhooks, and integrations (weighing machines, barcode, WhatsApp/SMS, payment gateways).
+
+    Designed for Indian retail requirements including GST, e-Invoice (IRN), e-Way Bill, and UPI.
+    Applicable to ERPNext / Frappe custom app implementations.
+
+    ## Authentication
+    All endpoints require a Bearer JWT token unless marked as public.
+    Obtain a token via `POST /auth/login`.
+
+  version: "1.0.0"
+  contact:
+    name: Hexonics POS API
+    email: dev@hexonics.in
+  license:
+    name: MIT
+
+servers:
+  - url: https://api.yourpos.in/api/v1
+    description: Production
+  - url: https://staging.yourpos.in/api/v1
+    description: Staging
+
+tags:
+  - name: Auth
+    description: Authentication & session management
+  - name: Users
+    description: User & role management
+  - name: Company
+    description: Company / branch / outlet settings
+  - name: Products
+    description: Product / item master
+  - name: Categories
+    description: Product categories & sub-categories
+  - name: Inventory
+    description: Stock management, adjustments, transfers
+  - name: Barcode
+    description: Barcode generation & lookup
+  - name: Customers
+    description: Customer master & loyalty
+  - name: Vendors
+    description: Vendor / supplier master
+  - name: POS
+    description: Point-of-sale sessions & transactions
+  - name: Sales
+    description: Sales invoices, returns & credit notes
+  - name: Purchase
+    description: Purchase orders, receipts & returns
+  - name: Payments
+    description: Payments, receipts & payment modes
+  - name: GST
+    description: GST compliance — GSTR-1, GSTR-3B, e-Invoice, e-Way Bill
+  - name: Accounting
+    description: Chart of accounts, journal entries, ledgers
+  - name: Expenses
+    description: Expense tracking & petty cash
+  - name: Reports
+    description: Business reports & analytics
+  - name: Notifications
+    description: WhatsApp, SMS & email notifications
+  - name: WeighingMachine
+    description: YesWeigh / weighing scale integration
+  - name: PaymentGateway
+    description: UPI, card & online payment gateway
+  - name: Webhooks
+    description: Webhook subscriptions
+  - name: Settings
+    description: System & application settings
+
+# ─────────────────────────────────────────────
+# SECURITY
+# ─────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ── Common ──
+    PaginationMeta:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        per_page: { type: integer, example: 20 }
+        total: { type: integer, example: 200 }
+        total_pages: { type: integer, example: 10 }
+
+    Error:
+      type: object
+      properties:
+        code: { type: string, example: VALIDATION_ERROR }
+        message: { type: string }
+        details: { type: object }
+
+    # ── Auth ──
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        outlet_id: { type: string, description: Required for multi-outlet login }
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in: { type: integer, example: 3600 }
+        user: { $ref: '#/components/schemas/User' }
+
+    # ── User ──
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        role: { type: string, enum: [admin, manager, cashier, accountant, viewer] }
+        outlet_ids: { type: array, items: { type: string } }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    # ── Company / Outlet ──
+    Company:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        legal_name: { type: string }
+        gstin: { type: string, example: "22AAAAA0000A1Z5" }
+        pan: { type: string }
+        address: { $ref: '#/components/schemas/Address' }
+        logo_url: { type: string }
+        financial_year_start: { type: string, example: "04-01" }
+        currency: { type: string, default: INR }
+        timezone: { type: string, default: Asia/Kolkata }
+
+    Outlet:
+      type: object
+      properties:
+        id: { type: string }
+        company_id: { type: string }
+        name: { type: string }
+        gstin: { type: string }
+        address: { $ref: '#/components/schemas/Address' }
+        is_active: { type: boolean }
+        pos_config: { $ref: '#/components/schemas/POSConfig' }
+
+    POSConfig:
+      type: object
+      properties:
+        default_payment_mode: { type: string, enum: [cash, upi, card, credit] }
+        print_receipt_on_save: { type: boolean }
+        receipt_printer_type: { type: string, enum: [a4, thermal_2inch, thermal_3inch] }
+        allow_discount: { type: boolean }
+        max_discount_pct: { type: number }
+        require_customer: { type: boolean }
+        enable_loyalty: { type: boolean }
+        enable_weighing_machine: { type: boolean }
+        weighing_machine_port: { type: string }
+
+    Address:
+      type: object
+      properties:
+        line1: { type: string }
+        line2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        state_code: { type: string, example: "29" }
+        pincode: { type: string }
+        country: { type: string, default: India }
+
+    # ── Product ──
+    Product:
+      type: object
+      properties:
+        id: { type: string }
+        sku: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category_id: { type: string }
+        sub_category_id: { type: string }
+        brand: { type: string }
+        unit: { type: string, example: pcs }
+        sale_price: { type: number }
+        cost_price: { type: number }
+        mrp: { type: number }
+        tax_category: { type: string }
+        gst_rate: { type: number, example: 18 }
+        hsn_sac_code: { type: string }
+        is_service: { type: boolean, default: false }
+        track_inventory: { type: boolean, default: true }
+        is_weighable: { type: boolean, default: false }
+        barcode: { type: string }
+        barcodes: { type: array, items: { type: string } }
+        image_url: { type: string }
+        is_active: { type: boolean }
+        variants: { type: array, items: { $ref: '#/components/schemas/ProductVariant' } }
+        batch_tracking: { type: boolean }
+        serial_tracking: { type: boolean }
+        reorder_level: { type: number }
+        reorder_qty: { type: number }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ProductVariant:
+      type: object
+      properties:
+        id: { type: string }
+        product_id: { type: string }
+        attributes: { type: object, description: "e.g. {size: L, color: Red}" }
+        sku: { type: string }
+        barcode: { type: string }
+        sale_price: { type: number }
+        cost_price: { type: number }
+        stock_qty: { type: number }
+
+    Category:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        parent_id: { type: string, nullable: true }
+        image_url: { type: string }
+        is_active: { type: boolean }
+
+    # ── Inventory ──
+    StockEntry:
+      type: object
+      properties:
+        id: { type: string }
+        entry_type:
+          type: string
+          enum: [purchase_receipt, sale, adjustment, transfer, opening, damage, return]
+        product_id: { type: string }
+        variant_id: { type: string, nullable: true }
+        outlet_id: { type: string }
+        batch_no: { type: string }
+        serial_no: { type: string }
+        qty: { type: number }
+        unit_cost: { type: number }
+        reference_doc: { type: string }
+        notes: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+
+    StockBalance:
+      type: object
+      properties:
+        product_id: { type: string }
+        product_name: { type: string }
+        outlet_id: { type: string }
+        qty_on_hand: { type: number }
+        qty_reserved: { type: number }
+        qty_available: { type: number }
+        valuation_rate: { type: number }
+        total_value: { type: number }
+
+    StockTransfer:
+      type: object
+      properties:
+        id: { type: string }
+        from_outlet_id: { type: string }
+        to_outlet_id: { type: string }
+        status: { type: string, enum: [draft, submitted, received, cancelled] }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id: { type: string }
+              variant_id: { type: string }
+              qty: { type: number }
+              batch_no: { type: string }
+        notes: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # ── Customer ──
+    Customer:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        gstin: { type: string }
+        pan: { type: string }
+        address: { $ref: '#/components/schemas/Address' }
+        credit_limit: { type: number }
+        outstanding_balance: { type: number }
+        loyalty_points: { type: number }
+        customer_group: { type: string }
+        price_list: { type: string }
+        notes: { type: string }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    LoyaltyTransaction:
+      type: object
+      properties:
+        id: { type: string }
+        customer_id: { type: string }
+        transaction_type: { type: string, enum: [earn, redeem, expire, adjust] }
+        points: { type: number }
+        reference_doc: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # ── Vendor ──
+    Vendor:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        gstin: { type: string }
+        pan: { type: string }
+        address: { $ref: '#/components/schemas/Address' }
+        payment_terms: { type: string }
+        credit_limit: { type: number }
+        outstanding_balance: { type: number }
+        bank_details: { $ref: '#/components/schemas/BankDetails' }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Party:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        category: { type: string }
+        mobile: { type: string }
+        email: { type: string }
+        party_type: { type: string, enum: [customer, vendor] }
+        balance: { type: number }
+        is_blocked: { type: boolean }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    PartiesStats:
+      type: object
+      properties:
+        total_parties: { type: integer }
+        to_collect: { type: number }
+        to_pay: { type: number }
+
+    BankDetails:
+      type: object
+      properties:
+        bank_name: { type: string }
+        account_no: { type: string }
+        ifsc_code: { type: string }
+        account_name: { type: string }
+
+    # ── POS Session ──
+    POSSession:
+      type: object
+      properties:
+        id: { type: string }
+        outlet_id: { type: string }
+        cashier_id: { type: string }
+        status: { type: string, enum: [open, closed] }
+        opening_cash: { type: number }
+        closing_cash: { type: number }
+        total_sales: { type: number }
+        total_returns: { type: number }
+        total_cash: { type: number }
+        total_card: { type: number }
+        total_upi: { type: number }
+        total_credit: { type: number }
+        opened_at: { type: string, format: date-time }
+        closed_at: { type: string, format: date-time, nullable: true }
+        closing_notes: { type: string }
+
+    # ── Sales Invoice ──
+    SalesInvoice:
+      type: object
+      properties:
+        id: { type: string }
+        invoice_no: { type: string }
+        invoice_type: { type: string, enum: [pos, regular, credit_note, proforma, quotation, delivery_challan] }
+        outlet_id: { type: string }
+        pos_session_id: { type: string }
+        customer_id: { type: string, nullable: true }
+        customer_name: { type: string }
+        customer_phone: { type: string }
+        customer_gstin: { type: string }
+        billing_address: { $ref: '#/components/schemas/Address' }
+        shipping_address: { $ref: '#/components/schemas/Address' }
+        invoice_date: { type: string, format: date }
+        due_date: { type: string, format: date }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SalesLineItem' }
+        discount_type: { type: string, enum: [percent, amount] }
+        discount_value: { type: number }
+        subtotal: { type: number }
+        total_discount: { type: number }
+        taxable_amount: { type: number }
+        cgst_amount: { type: number }
+        sgst_amount: { type: number }
+        igst_amount: { type: number }
+        cess_amount: { type: number }
+        total_tax: { type: number }
+        round_off: { type: number }
+        grand_total: { type: number }
+        paid_amount: { type: number }
+        balance_due: { type: number }
+        payment_mode: { type: string, enum: [cash, card, upi, credit, split] }
+        payment_details: { type: array, items: { $ref: '#/components/schemas/PaymentSplit' } }
+        status: { type: string, enum: [draft, submitted, paid, partially_paid, unpaid, cancelled] }
+        irn: { type: string, description: e-Invoice IRN }
+        irn_ack_no: { type: string }
+        irn_ack_date: { type: string, format: date-time }
+        eway_bill_no: { type: string }
+        notes: { type: string }
+        loyalty_points_earned: { type: number }
+        loyalty_points_redeemed: { type: number }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+
+    SalesLineItem:
+      type: object
+      required: [product_id, qty, sale_price]
+      properties:
+        id: { type: string }
+        product_id: { type: string }
+        variant_id: { type: string, nullable: true }
+        product_name: { type: string }
+        hsn_sac_code: { type: string }
+        barcode: { type: string }
+        qty: { type: number }
+        unit: { type: string }
+        sale_price: { type: number }
+        mrp: { type: number }
+        cost_price: { type: number }
+        discount_pct: { type: number }
+        discount_amount: { type: number }
+        net_rate: { type: number }
+        gst_rate: { type: number }
+        gst_type: { type: string, enum: [inclusive, exclusive] }
+        cgst_rate: { type: number }
+        cgst_amount: { type: number }
+        sgst_rate: { type: number }
+        sgst_amount: { type: number }
+        igst_rate: { type: number }
+        igst_amount: { type: number }
+        cess_rate: { type: number }
+        cess_amount: { type: number }
+        taxable_amount: { type: number }
+        line_total: { type: number }
+        batch_no: { type: string }
+        serial_no: { type: string }
+        weight_kg: { type: number, description: For weighable items }
+
+    PaymentSplit:
+      type: object
+      properties:
+        mode: { type: string, enum: [cash, card, upi, cheque, credit, gift_card, loyalty_points] }
+        amount: { type: number }
+        reference_no: { type: string }
+        bank_name: { type: string }
+        upi_id: { type: string }
+
+    # ── Purchase Order ──
+    PurchaseOrder:
+      type: object
+      properties:
+        id: { type: string }
+        po_no: { type: string }
+        outlet_id: { type: string }
+        vendor_id: { type: string }
+        order_date: { type: string, format: date }
+        expected_delivery: { type: string, format: date }
+        status: { type: string, enum: [draft, submitted, partial, received, cancelled] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PurchaseLineItem' }
+        subtotal: { type: number }
+        total_tax: { type: number }
+        grand_total: { type: number }
+        notes: { type: string }
+        created_at: { type: string, format: date-time }
+
+    PurchaseLineItem:
+      type: object
+      properties:
+        id: { type: string }
+        product_id: { type: string }
+        variant_id: { type: string }
+        product_name: { type: string }
+        hsn_sac_code: { type: string }
+        ordered_qty: { type: number }
+        received_qty: { type: number }
+        unit: { type: string }
+        cost_price: { type: number }
+        gst_rate: { type: number }
+        cgst_amount: { type: number }
+        sgst_amount: { type: number }
+        igst_amount: { type: number }
+        line_total: { type: number }
+
+    PurchaseReceipt:
+      type: object
+      properties:
+        id: { type: string }
+        grn_no: { type: string }
+        po_id: { type: string, nullable: true }
+        outlet_id: { type: string }
+        vendor_id: { type: string }
+        receipt_date: { type: string, format: date }
+        status: { type: string, enum: [draft, submitted, cancelled] }
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/PurchaseLineItem'
+              - type: object
+                properties:
+                  batch_no: { type: string }
+                  mfg_date: { type: string, format: date }
+                  exp_date: { type: string, format: date }
+        bill_no: { type: string }
+        bill_date: { type: string, format: date }
+        grand_total: { type: number }
+        created_at: { type: string, format: date-time }
+
+    # ── Payment ──
+    PaymentEntry:
+      type: object
+      properties:
+        id: { type: string }
+        payment_no: { type: string }
+        payment_type: { type: string, enum: [receive, pay, internal_transfer] }
+        party_type: { type: string, enum: [customer, vendor] }
+        party_id: { type: string }
+        payment_date: { type: string, format: date }
+        mode: { type: string, enum: [cash, bank, upi, cheque, card] }
+        amount: { type: number }
+        discount: { type: number }
+        reference_no: { type: string }
+        reference_date: { type: string, format: date }
+        account_id: { type: string }
+        allocations:
+          type: array
+          items:
+            type: object
+            properties:
+              invoice_id: { type: string }
+              allocated_amount: { type: number }
+        notes: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # ── GST ──
+    GSTRSummary:
+      type: object
+      properties:
+        period: { type: string, example: "2024-03" }
+        outward_taxable: { type: number }
+        outward_exempt: { type: number }
+        inward_taxable: { type: number }
+        total_cgst: { type: number }
+        total_sgst: { type: number }
+        total_igst: { type: number }
+        total_cess: { type: number }
+        net_tax_liability: { type: number }
+        itc_eligible: { type: number }
+        tax_payable: { type: number }
+
+    EInvoiceRequest:
+      type: object
+      required: [invoice_id]
+      properties:
+        invoice_id: { type: string }
+        cancel_reason: { type: string, description: Required for cancellation }
+
+    EInvoiceResponse:
+      type: object
+      properties:
+        invoice_id: { type: string }
+        irn: { type: string }
+        ack_no: { type: string }
+        ack_date: { type: string, format: date-time }
+        signed_invoice: { type: string }
+        signed_qr_code: { type: string }
+        status: { type: string, enum: [generated, cancelled] }
+
+    EWayBillRequest:
+      type: object
+      required: [invoice_id]
+      properties:
+        invoice_id: { type: string }
+        transporter_id: { type: string }
+        transport_doc_no: { type: string }
+        transport_doc_date: { type: string, format: date }
+        vehicle_no: { type: string }
+        vehicle_type: { type: string, enum: [R, O] }
+        distance_km: { type: integer }
+        supply_type: { type: string }
+        sub_supply_type: { type: string }
+
+    EWayBillResponse:
+      type: object
+      properties:
+        invoice_id: { type: string }
+        ewb_no: { type: string }
+        ewb_date: { type: string, format: date-time }
+        valid_upto: { type: string, format: date-time }
+        status: { type: string }
+
+    # ── Accounting ──
+    Account:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        code: { type: string }
+        account_type:
+          type: string
+          enum: [asset, liability, equity, income, expense, bank, cash, receivable, payable, stock, tax]
+        parent_id: { type: string, nullable: true }
+        is_group: { type: boolean }
+        opening_balance: { type: number }
+        current_balance: { type: number }
+        currency: { type: string }
+        is_active: { type: boolean }
+
+    JournalEntry:
+      type: object
+      properties:
+        id: { type: string }
+        voucher_no: { type: string }
+        voucher_type:
+          type: string
+          enum: [journal, payment, receipt, contra, credit_note, debit_note]
+        posting_date: { type: string, format: date }
+        narration: { type: string }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/JournalLine' }
+        total_debit: { type: number }
+        total_credit: { type: number }
+        status: { type: string, enum: [draft, submitted, cancelled] }
+        created_at: { type: string, format: date-time }
+
+    JournalLine:
+      type: object
+      required: [account_id]
+      properties:
+        account_id: { type: string }
+        debit: { type: number, default: 0 }
+        credit: { type: number, default: 0 }
+        reference: { type: string }
+        cost_center: { type: string }
+        remarks: { type: string }
+
+    LedgerEntry:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        voucher_type: { type: string }
+        voucher_no: { type: string }
+        party: { type: string }
+        remarks: { type: string }
+        debit: { type: number }
+        credit: { type: number }
+        balance: { type: number }
+
+    # ── Expense ──
+    Expense:
+      type: object
+      properties:
+        id: { type: string }
+        expense_no: { type: string }
+        expense_date: { type: string, format: date }
+        category: { type: string }
+        account_id: { type: string }
+        amount: { type: number }
+        tax_amount: { type: number }
+        total_amount: { type: number }
+        payment_mode: { type: string }
+        vendor_id: { type: string, nullable: true }
+        description: { type: string }
+        receipt_url: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # ── Notification ──
+    NotificationRequest:
+      type: object
+      required: [channel, invoice_id]
+      properties:
+        channel: { type: string, enum: [whatsapp, sms, email] }
+        invoice_id: { type: string }
+        recipient_phone: { type: string }
+        recipient_email: { type: string }
+        message_template: { type: string }
+        attach_pdf: { type: boolean, default: true }
+        language: { type: string, default: en }
+
+    # ── Weighing Machine ──
+    WeighingReading:
+      type: object
+      properties:
+        device_id: { type: string }
+        weight_kg: { type: number }
+        unit: { type: string, enum: [kg, g, lb] }
+        stable: { type: boolean }
+        timestamp: { type: string, format: date-time }
+
+    # ── Report ──
+    SalesSummaryReport:
+      type: object
+      properties:
+        period_from: { type: string, format: date }
+        period_to: { type: string, format: date }
+        total_invoices: { type: integer }
+        total_sales: { type: number }
+        total_returns: { type: number }
+        net_sales: { type: number }
+        total_discount: { type: number }
+        total_tax: { type: number }
+        total_cgst: { type: number }
+        total_sgst: { type: number }
+        total_igst: { type: number }
+        cash_collected: { type: number }
+        upi_collected: { type: number }
+        card_collected: { type: number }
+        credit_sales: { type: number }
+        top_products:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id: { type: string }
+              product_name: { type: string }
+              qty_sold: { type: number }
+              total_amount: { type: number }
+
+security:
+  - BearerAuth: []
+
+# ─────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────
+paths:
+
+  # ════════════════════════════════
+  # AUTH
+  # ════════════════════════════════
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: User login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401':
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout & invalidate token
+      responses:
+        '200': { description: Logged out }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: New access token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change current user password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [old_password, new_password]
+              properties:
+                old_password: { type: string }
+                new_password: { type: string }
+      responses:
+        '200': { description: Password updated }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Initiate password reset (OTP via SMS/email)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                phone: { type: string }
+      responses:
+        '200': { description: OTP sent }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password using OTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otp, new_password]
+              properties:
+                otp: { type: string }
+                new_password: { type: string }
+      responses:
+        '200': { description: Password reset successful }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current logged-in user profile
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+          description: OK
+
+  # ════════════════════════════════
+  # USERS
+  # ════════════════════════════════
+  /users:
+    get:
+      tags: [Users]
+      summary: List all users
+      parameters:
+        - name: role
+          in: query
+          schema: { type: string }
+        - name: is_active
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/User' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Users]
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/User' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Users]
+      summary: Get user by ID
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/User' } } }
+          description: OK
+    put:
+      tags: [Users]
+      summary: Update user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/User' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/User' } } }
+          description: OK
+    delete:
+      tags: [Users]
+      summary: Deactivate user
+      responses:
+        '200': { description: Deactivated }
+
+  /users/{id}/outlets:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Users]
+      summary: Assign outlets to user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outlet_ids: { type: array, items: { type: string } }
+      responses:
+        '200': { description: Updated }
+
+  # ════════════════════════════════
+  # COMPANY & OUTLETS
+  # ════════════════════════════════
+  /company:
+    get:
+      tags: [Company]
+      summary: Get company details
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Company' } } }
+          description: OK
+    put:
+      tags: [Company]
+      summary: Update company details
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Company' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Company' } } }
+          description: OK
+
+  /company/logo:
+    post:
+      tags: [Company]
+      summary: Upload company logo
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Logo URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logo_url: { type: string }
+
+  /outlets:
+    get:
+      tags: [Company]
+      summary: List all outlets / branches
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Outlet' }
+          description: OK
+    post:
+      tags: [Company]
+      summary: Create outlet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Outlet' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Outlet' } } }
+          description: Created
+
+  /outlets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Company]
+      summary: Get outlet by ID
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Outlet' } } }
+          description: OK
+    put:
+      tags: [Company]
+      summary: Update outlet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Outlet' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Outlet' } } }
+          description: OK
+    delete:
+      tags: [Company]
+      summary: Deactivate outlet
+      responses:
+        '200': { description: Deactivated }
+
+  /outlets/{id}/pos-config:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Company]
+      summary: Get POS config for outlet
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/POSConfig' } } }
+          description: OK
+    put:
+      tags: [Company]
+      summary: Update POS config for outlet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/POSConfig' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/POSConfig' } } }
+          description: OK
+
+  # ════════════════════════════════
+  # CATEGORIES
+  # ════════════════════════════════
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List all categories (tree or flat)
+      parameters:
+        - name: flat
+          in: query
+          schema: { type: boolean }
+        - name: parent_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+          description: OK
+    post:
+      tags: [Categories]
+      summary: Create category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Category' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } }
+          description: Created
+
+  /categories/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Categories]
+      summary: Get category
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } }
+          description: OK
+    put:
+      tags: [Categories]
+      summary: Update category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Category' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } }
+          description: OK
+    delete:
+      tags: [Categories]
+      summary: Delete category
+      responses:
+        '204': { description: Deleted }
+
+  # ════════════════════════════════
+  # PRODUCTS
+  # ════════════════════════════════
+  /products:
+    get:
+      tags: [Products]
+      summary: List products
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Search by name/SKU/barcode
+        - name: category_id
+          in: query
+          schema: { type: string }
+        - name: is_active
+          in: query
+          schema: { type: boolean }
+        - name: is_service
+          in: query
+          schema: { type: boolean }
+        - name: low_stock
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Product' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Products]
+      summary: Create product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } }
+          description: Created
+
+  /products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Products]
+      summary: Get product
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } }
+          description: OK
+    put:
+      tags: [Products]
+      summary: Update product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } }
+          description: OK
+    delete:
+      tags: [Products]
+      summary: Deactivate product
+      responses:
+        '200': { description: Deactivated }
+
+  /products/{id}/image:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Products]
+      summary: Upload product image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: Image URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  image_url: { type: string }
+
+  /products/{id}/variants:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Products]
+      summary: Get product variants
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductVariant' }
+          description: OK
+    post:
+      tags: [Products]
+      summary: Add variant to product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductVariant' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProductVariant' } } }
+          description: Created
+
+  /products/{id}/price-history:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Products]
+      summary: Get product price change history
+      responses:
+        '200':
+          description: Price history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    changed_at: { type: string, format: date-time }
+                    changed_by: { type: string }
+                    old_price: { type: number }
+                    new_price: { type: number }
+
+  /products/bulk-import:
+    post:
+      tags: [Products]
+      summary: Bulk import products via CSV/Excel
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                overwrite_existing: { type: boolean }
+      responses:
+        '202':
+          description: Import started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+                  message: { type: string }
+
+  /products/bulk-export:
+    get:
+      tags: [Products]
+      summary: Export products as CSV
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, xlsx] }
+      responses:
+        '200':
+          description: File download
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  # ════════════════════════════════
+  # BARCODE
+  # ════════════════════════════════
+  /barcode/lookup:
+    get:
+      tags: [Barcode]
+      summary: Lookup product by barcode
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Product found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { description: Barcode not found }
+
+  /barcode/generate:
+    post:
+      tags: [Barcode]
+      summary: Generate barcode for product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id]
+              properties:
+                product_id: { type: string }
+                variant_id: { type: string }
+                barcode_type: { type: string, enum: [ean13, ean8, code128, qrcode], default: code128 }
+                qty_labels: { type: integer, default: 1 }
+      responses:
+        '200':
+          description: Barcode image
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  barcode: { type: string }
+                  barcode_image_base64: { type: string }
+                  print_label_pdf_url: { type: string }
+
+  /barcode/print-labels:
+    post:
+      tags: [Barcode]
+      summary: Print barcode labels for multiple products
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      product_id: { type: string }
+                      variant_id: { type: string }
+                      qty: { type: integer }
+                label_format: { type: string, enum: [2x1, 3x1, 4x1] }
+      responses:
+        '200':
+          description: PDF download URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pdf_url: { type: string }
+
+  # ════════════════════════════════
+  # INVENTORY
+  # ════════════════════════════════
+  /inventory/balance:
+    get:
+      tags: [Inventory]
+      summary: Get stock balance (all products)
+      parameters:
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+        - name: product_id
+          in: query
+          schema: { type: string }
+        - name: category_id
+          in: query
+          schema: { type: string }
+        - name: low_stock_only
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Stock balance list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/StockBalance' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+  /inventory/entries:
+    get:
+      tags: [Inventory]
+      summary: List stock ledger entries
+      parameters:
+        - name: product_id
+          in: query
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: entry_type
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Stock ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/StockEntry' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Inventory]
+      summary: Manual stock adjustment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockEntry' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/StockEntry' } } }
+          description: Created
+
+  /inventory/transfers:
+    get:
+      tags: [Inventory]
+      summary: List inter-outlet stock transfers
+      responses:
+        '200':
+          description: Transfers list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StockTransfer' }
+    post:
+      tags: [Inventory]
+      summary: Create stock transfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockTransfer' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/StockTransfer' } } }
+          description: Created
+
+  /inventory/transfers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Inventory]
+      summary: Get transfer
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/StockTransfer' } } }
+          description: OK
+    put:
+      tags: [Inventory]
+      summary: Update transfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockTransfer' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/StockTransfer' } } }
+          description: OK
+
+  /inventory/transfers/{id}/submit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Inventory]
+      summary: Submit / dispatch transfer
+      responses:
+        '200': { description: Submitted }
+
+  /inventory/transfers/{id}/receive:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Inventory]
+      summary: Mark transfer as received (at destination)
+      responses:
+        '200': { description: Received }
+
+  /inventory/opening-stock:
+    post:
+      tags: [Inventory]
+      summary: Upload / set opening stock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outlet_id: { type: string }
+                as_of_date: { type: string, format: date }
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      product_id: { type: string }
+                      variant_id: { type: string }
+                      qty: { type: number }
+                      cost_price: { type: number }
+                      batch_no: { type: string }
+      responses:
+        '200': { description: Opening stock set }
+
+  /inventory/batch-serials:
+    get:
+      tags: [Inventory]
+      summary: List batches / serial numbers
+      parameters:
+        - name: product_id
+          in: query
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+        - name: expiring_within_days
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Batch/serial list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    batch_no: { type: string }
+                    product_id: { type: string }
+                    mfg_date: { type: string, format: date }
+                    exp_date: { type: string, format: date }
+                    qty_on_hand: { type: number }
+
+  # ════════════════════════════════
+  # CUSTOMERS
+  # ════════════════════════════════
+  /customers:
+    get:
+      tags: [Customers]
+      summary: List customers
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Search by name/phone/email
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Customer' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+          description: OK
+    post:
+      tags: [Customers]
+      summary: Create customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Customer' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Customer' } } }
+          description: Created
+
+  /customers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Customers]
+      summary: Get customer
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Customer' } } }
+          description: OK
+    put:
+      tags: [Customers]
+      summary: Update customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Customer' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Customer' } } }
+          description: OK
+    delete:
+      tags: [Customers]
+      summary: Deactivate customer
+      responses:
+        '200': { description: Deactivated }
+
+  /customers/{id}/ledger:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Customers]
+      summary: Get customer account ledger
+      parameters:
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Customer ledger
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LedgerEntry' }
+
+  /customers/{id}/invoices:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Customers]
+      summary: Get customer's sales invoices
+      responses:
+        '200':
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SalesInvoice' }
+
+  /customers/{id}/loyalty:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Customers]
+      summary: Get loyalty points balance & history
+      responses:
+        '200':
+          description: Loyalty info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance: { type: number }
+                  history: { type: array, items: { $ref: '#/components/schemas/LoyaltyTransaction' } }
+
+  /customers/{id}/loyalty/adjust:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Customers]
+      summary: Manual loyalty points adjustment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                points: { type: number }
+                reason: { type: string }
+      responses:
+        '200': { description: Adjusted }
+
+  /customers/{id}/send-statement:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Customers]
+      summary: Send account statement via WhatsApp/email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel: { type: string, enum: [whatsapp, email, sms] }
+                from_date: { type: string, format: date }
+                to_date: { type: string, format: date }
+      responses:
+        '200': { description: Sent }
+
+  # ════════════════════════════════
+  # VENDORS
+  # ════════════════════════════════
+  /vendors:
+    get:
+      tags: [Vendors]
+      summary: List vendors
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Vendor' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+          description: OK
+    post:
+      tags: [Vendors]
+      summary: Create vendor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Vendor' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } }
+          description: Created
+
+  /parties:
+    get:
+      tags: [Parties]
+      summary: List all parties
+      parameters:
+        - name: party_type
+          in: query
+          schema: { type: string, enum: [customer, vendor] }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Party' } }
+                  stats: { $ref: '#/components/schemas/PartiesStats' }
+    post:
+      tags: [Parties]
+      summary: Create or update party
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Party' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Party' }
+
+  /parties/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Parties]
+      summary: Update party
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Party' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Party' }
+    delete:
+      tags: [Parties]
+      summary: Delete party
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+
+  /parties/bulk-action:
+    post:
+      tags: [Parties]
+      summary: Perform bulk actions on parties
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: { type: string, enum: [block, delete, export] }
+                ids: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: OK
+
+  /vendors/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Vendors]
+      summary: Get vendor
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } }
+          description: OK
+    put:
+      tags: [Vendors]
+      summary: Update vendor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Vendor' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } }
+          description: OK
+    delete:
+      tags: [Vendors]
+      summary: Deactivate vendor
+      responses:
+        '200': { description: Deactivated }
+
+  /vendors/{id}/ledger:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Vendors]
+      summary: Vendor payable ledger
+      parameters:
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Vendor ledger
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LedgerEntry' }
+
+  /vendors/{id}/purchase-orders:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Vendors]
+      summary: Get vendor's purchase orders
+      responses:
+        '200':
+          description: POs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PurchaseOrder' }
+
+  # ════════════════════════════════
+  # POS SESSIONS
+  # ════════════════════════════════
+  /pos/sessions:
+    get:
+      tags: [POS]
+      summary: List POS sessions
+      parameters:
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+        - name: cashier_id
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, closed] }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/POSSession' }
+          description: OK
+    post:
+      tags: [POS]
+      summary: Open a new POS session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outlet_id, opening_cash]
+              properties:
+                outlet_id: { type: string }
+                opening_cash: { type: number }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/POSSession' } } }
+          description: Session opened
+
+  /pos/sessions/active:
+    get:
+      tags: [POS]
+      summary: Get current active session for the logged-in cashier
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/POSSession' } } }
+          description: OK
+
+  /pos/sessions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [POS]
+      summary: Get POS session
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/POSSession' } } }
+          description: OK
+
+  /pos/sessions/{id}/close:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [POS]
+      summary: Close POS session (end of day)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                closing_cash: { type: number }
+                closing_notes: { type: string }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/POSSession' } } }
+          description: Session closed
+
+  /pos/sessions/{id}/summary:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [POS]
+      summary: Get Z-report / session summary
+      responses:
+        '200':
+          description: Z-report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { $ref: '#/components/schemas/POSSession' }
+                  total_invoices: { type: integer }
+                  total_sales: { type: number }
+                  total_returns: { type: number }
+                  payment_breakdown:
+                    type: object
+                    additionalProperties: { type: number }
+                  top_products:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        product_name: { type: string }
+                        qty: { type: number }
+                        amount: { type: number }
+
+  /pos/sessions/{id}/cash-movements:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [POS]
+      summary: Get cash-in / cash-out movements for session
+      responses:
+        '200':
+          description: Cash movements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type: { type: string, enum: [cash_in, cash_out] }
+                    amount: { type: number }
+                    reason: { type: string }
+                    created_at: { type: string, format: date-time }
+    post:
+      tags: [POS]
+      summary: Record cash-in or cash-out
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, amount]
+              properties:
+                type: { type: string, enum: [cash_in, cash_out] }
+                amount: { type: number }
+                reason: { type: string }
+      responses:
+        '201': { description: Recorded }
+
+  # ════════════════════════════════
+  # SALES INVOICES
+  # ════════════════════════════════
+  /sales/invoices:
+    get:
+      tags: [Sales]
+      summary: List sales invoices
+      parameters:
+        - name: invoice_type
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: customer_id
+          in: query
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Invoice list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/SalesInvoice' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Sales]
+      summary: Create sales invoice / POS bill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesInvoice' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } }
+          description: Created
+
+  /sales/invoices/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Sales]
+      summary: Get sales invoice
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } }
+          description: OK
+    put:
+      tags: [Sales]
+      summary: Update draft invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalesInvoice' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } }
+          description: OK
+    delete:
+      tags: [Sales]
+      summary: Cancel invoice
+      responses:
+        '200': { description: Cancelled }
+
+  /sales/invoices/{id}/submit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Sales]
+      summary: Submit (finalize) invoice
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } }
+          description: Submitted
+
+  /sales/invoices/{id}/pdf:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Sales]
+      summary: Download invoice as PDF
+      parameters:
+        - name: template
+          in: query
+          schema: { type: string, enum: [a4, thermal_2inch, thermal_3inch] }
+      responses:
+        '200':
+          description: PDF file
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+
+  /sales/invoices/{id}/share:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Sales]
+      summary: Share invoice via WhatsApp / SMS / Email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationRequest' }
+      responses:
+        '200': { description: Shared }
+
+  /sales/invoices/{id}/payment:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Sales]
+      summary: Record payment against invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: number }
+                payment_date: { type: string, format: date }
+                mode: { type: string, enum: [cash, card, upi, cheque, bank_transfer] }
+                reference_no: { type: string }
+      responses:
+        '200': { description: Payment recorded }
+
+  /sales/invoices/{id}/credit-note:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Sales]
+      summary: Create credit note / return against invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                return_items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      line_item_id: { type: string }
+                      return_qty: { type: number }
+                      reason: { type: string }
+                refund_mode: { type: string, enum: [cash, original_payment, credit_note] }
+      responses:
+        '201':
+          description: Credit note created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalesInvoice' }
+
+  /sales/invoices/{id}/duplicate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Sales]
+      summary: Duplicate invoice (new draft)
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } }
+          description: Created
+
+  /sales/invoices/calculate-tax:
+    post:
+      tags: [Sales]
+      summary: Calculate tax for line items (without creating invoice)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outlet_id: { type: string }
+                customer_gstin: { type: string }
+                items: { type: array, items: { $ref: '#/components/schemas/SalesLineItem' } }
+      responses:
+        '200':
+          description: Tax calculation result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalesInvoice' }
+
+  # ════════════════════════════════
+  # PURCHASE
+  # ════════════════════════════════
+  /purchase/orders:
+    get:
+      tags: [Purchase]
+      summary: List purchase orders
+      parameters:
+        - name: vendor_id
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: PO list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PurchaseOrder' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+    post:
+      tags: [Purchase]
+      summary: Create purchase order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseOrder' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseOrder' } } }
+          description: Created
+
+  /purchase/orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Purchase]
+      summary: Get purchase order
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseOrder' } } }
+          description: OK
+    put:
+      tags: [Purchase]
+      summary: Update purchase order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseOrder' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseOrder' } } }
+          description: OK
+    delete:
+      tags: [Purchase]
+      summary: Cancel purchase order
+      responses:
+        '200': { description: Cancelled }
+
+  /purchase/orders/{id}/submit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Purchase]
+      summary: Submit purchase order to vendor
+      responses:
+        '200': { description: Submitted }
+
+  /purchase/orders/{id}/pdf:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Purchase]
+      summary: Download PO as PDF
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+
+  /purchase/receipts:
+    get:
+      tags: [Purchase]
+      summary: List goods receipts (GRNs)
+      parameters:
+        - name: vendor_id
+          in: query
+          schema: { type: string }
+        - name: po_id
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PurchaseReceipt' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+          description: OK
+    post:
+      tags: [Purchase]
+      summary: Create purchase receipt (GRN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseReceipt' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseReceipt' } } }
+          description: Created
+
+  /purchase/receipts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Purchase]
+      summary: Get GRN
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseReceipt' } } }
+          description: OK
+    put:
+      tags: [Purchase]
+      summary: Update GRN (while in draft)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseReceipt' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseReceipt' } } }
+          description: OK
+
+  /purchase/receipts/{id}/submit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Purchase]
+      summary: Submit GRN (updates stock)
+      responses:
+        '200': { description: Submitted }
+
+  /purchase/bills:
+    get:
+      tags: [Purchase]
+      summary: List purchase bills (vendor invoices)
+      parameters:
+        - name: vendor_id
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Purchase bills
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    bill_no: { type: string }
+                    vendor_id: { type: string }
+                    bill_date: { type: string, format: date }
+                    due_date: { type: string, format: date }
+                    grand_total: { type: number }
+                    paid_amount: { type: number }
+                    balance_due: { type: number }
+                    status: { type: string }
+    post:
+      tags: [Purchase]
+      summary: Create purchase bill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                grn_id: { type: string }
+                vendor_id: { type: string }
+                bill_no: { type: string }
+                bill_date: { type: string, format: date }
+                due_date: { type: string, format: date }
+                grand_total: { type: number }
+      responses:
+        '201': { description: Created }
+
+  /purchase/returns:
+    post:
+      tags: [Purchase]
+      summary: Create purchase return / debit note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                grn_id: { type: string }
+                vendor_id: { type: string }
+                return_items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      product_id: { type: string }
+                      qty: { type: number }
+                      reason: { type: string }
+      responses:
+        '201': { description: Return created }
+
+  # ════════════════════════════════
+  # PAYMENTS
+  # ════════════════════════════════
+  /payments:
+    get:
+      tags: [Payments]
+      summary: List payment entries
+      parameters:
+        - name: payment_type
+          in: query
+          schema: { type: string, enum: [receive, pay] }
+        - name: party_type
+          in: query
+          schema: { type: string }
+        - name: party_id
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PaymentEntry' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+          description: OK
+    post:
+      tags: [Payments]
+      summary: Create payment entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentEntry' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PaymentEntry' } } }
+          description: Created
+
+  /payments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Payments]
+      summary: Get payment entry
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PaymentEntry' } } }
+          description: OK
+    delete:
+      tags: [Payments]
+      summary: Cancel payment
+      responses:
+        '200': { description: Cancelled }
+
+  /payments/outstanding:
+    get:
+      tags: [Payments]
+      summary: Get outstanding invoices (receivables / payables)
+      parameters:
+        - name: party_type
+          in: query
+          required: true
+          schema: { type: string, enum: [customer, vendor] }
+        - name: party_id
+          in: query
+          schema: { type: string }
+        - name: overdue_only
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Outstanding list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    invoice_id: { type: string }
+                    invoice_no: { type: string }
+                    invoice_date: { type: string, format: date }
+                    due_date: { type: string, format: date }
+                    grand_total: { type: number }
+                    paid_amount: { type: number }
+                    balance_due: { type: number }
+                    overdue_days: { type: integer }
+
+  # ════════════════════════════════
+  # GST
+  # ════════════════════════════════
+  /gst/summary:
+    get:
+      tags: [GST]
+      summary: Get GST liability summary for a period
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema: { type: string, example: "2024-03" }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/GSTRSummary' } } }
+          description: OK
+
+  /gst/gstr1:
+    get:
+      tags: [GST]
+      summary: Get GSTR-1 data for filing
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema: { type: string, example: "2024-03" }
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, excel], default: json }
+      responses:
+        '200':
+          description: GSTR-1 data
+          content:
+            application/json:
+              schema: { type: object }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+
+  /gst/gstr3b:
+    get:
+      tags: [GST]
+      summary: Get GSTR-3B summary
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: GSTR-3B
+          content:
+            application/json:
+              schema: { type: object }
+
+  /gst/gstr2:
+    get:
+      tags: [GST]
+      summary: Get GSTR-2 (purchases) data
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: GSTR-2
+          content:
+            application/json:
+              schema: { type: object }
+
+  /gst/einvoice/generate:
+    post:
+      tags: [GST]
+      summary: Generate e-Invoice (IRN) for invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EInvoiceRequest' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/EInvoiceResponse' } } }
+          description: e-Invoice generated
+
+  /gst/einvoice/cancel:
+    post:
+      tags: [GST]
+      summary: Cancel e-Invoice (IRN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EInvoiceRequest' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/EInvoiceResponse' } } }
+          description: Cancelled
+
+  /gst/einvoice/{invoice_id}:
+    parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [GST]
+      summary: Get e-Invoice details for invoice
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/EInvoiceResponse' } } }
+          description: OK
+
+  /gst/ewaybill/generate:
+    post:
+      tags: [GST]
+      summary: Generate e-Way Bill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EWayBillRequest' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/EWayBillResponse' } } }
+          description: e-Way Bill generated
+
+  /gst/ewaybill/cancel:
+    post:
+      tags: [GST]
+      summary: Cancel e-Way Bill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ewb_no, cancel_reason]
+              properties:
+                ewb_no: { type: string }
+                cancel_reason: { type: string }
+      responses:
+        '200': { description: Cancelled }
+
+  /gst/ewaybill/{ewb_no}:
+    parameters:
+      - name: ewb_no
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [GST]
+      summary: Get e-Way Bill details
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/EWayBillResponse' } } }
+          description: OK
+
+  /gst/ewaybill/{ewb_no}/extend:
+    parameters:
+      - name: ewb_no
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [GST]
+      summary: Extend e-Way Bill validity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vehicle_no: { type: string }
+                place: { type: string }
+                remaining_distance: { type: integer }
+      responses:
+        '200': { description: Extended }
+
+  /gst/hsn-rates:
+    get:
+      tags: [GST]
+      summary: Look up GST rate for HSN/SAC code
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: GST rate info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string }
+                  description: { type: string }
+                  cgst_rate: { type: number }
+                  sgst_rate: { type: number }
+                  igst_rate: { type: number }
+                  cess_rate: { type: number }
+
+  # ════════════════════════════════
+  # ACCOUNTING
+  # ════════════════════════════════
+  /accounting/accounts:
+    get:
+      tags: [Accounting]
+      summary: List chart of accounts
+      parameters:
+        - name: account_type
+          in: query
+          schema: { type: string }
+        - name: is_group
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+          description: OK
+    post:
+      tags: [Accounting]
+      summary: Create account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Account' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } }
+          description: Created
+
+  /accounting/accounts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Accounting]
+      summary: Get account
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } }
+          description: OK
+    put:
+      tags: [Accounting]
+      summary: Update account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Account' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } }
+          description: OK
+
+  /accounting/accounts/{id}/ledger:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Accounting]
+      summary: Get account ledger entries
+      parameters:
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Ledger entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LedgerEntry' }
+
+  /accounting/journal-entries:
+    get:
+      tags: [Accounting]
+      summary: List journal entries
+      parameters:
+        - name: voucher_type
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/JournalEntry' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+          description: OK
+    post:
+      tags: [Accounting]
+      summary: Create journal entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JournalEntry' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } }
+          description: Created
+
+  /accounting/journal-entries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Accounting]
+      summary: Get journal entry
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } }
+          description: OK
+    delete:
+      tags: [Accounting]
+      summary: Cancel journal entry
+      responses:
+        '200': { description: Cancelled }
+
+  /accounting/journal-entries/{id}/submit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Accounting]
+      summary: Submit journal entry
+      responses:
+        '200': { description: Submitted }
+
+  /accounting/trial-balance:
+    get:
+      tags: [Accounting]
+      summary: Get trial balance
+      parameters:
+        - name: as_of_date
+          in: query
+          schema: { type: string, format: date }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Trial balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        account_id: { type: string }
+                        account_name: { type: string }
+                        opening_debit: { type: number }
+                        opening_credit: { type: number }
+                        period_debit: { type: number }
+                        period_credit: { type: number }
+                        closing_debit: { type: number }
+                        closing_credit: { type: number }
+
+  /accounting/profit-and-loss:
+    get:
+      tags: [Accounting]
+      summary: Get P&L statement
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: compare_previous
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: P&L
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_income: { type: number }
+                  total_expense: { type: number }
+                  gross_profit: { type: number }
+                  net_profit: { type: number }
+                  sections: { type: array, items: { type: object } }
+
+  /accounting/balance-sheet:
+    get:
+      tags: [Accounting]
+      summary: Get balance sheet
+      parameters:
+        - name: as_of_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Balance sheet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_assets: { type: number }
+                  total_liabilities: { type: number }
+                  total_equity: { type: number }
+                  sections: { type: array, items: { type: object } }
+
+  /accounting/cash-flow:
+    get:
+      tags: [Accounting]
+      summary: Get cash flow statement
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Cash flow
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operating: { type: number }
+                  investing: { type: number }
+                  financing: { type: number }
+                  net_change: { type: number }
+
+  /accounting/period-closing:
+    post:
+      tags: [Accounting]
+      summary: Close accounting period
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [period_end_date]
+              properties:
+                period_end_date: { type: string, format: date }
+                closing_account_id: { type: string }
+      responses:
+        '200': { description: Period closed }
+
+  # ════════════════════════════════
+  # EXPENSES
+  # ════════════════════════════════
+  /expenses:
+    get:
+      tags: [Expenses]
+      summary: List expenses
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Expense' } }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+          description: OK
+    post:
+      tags: [Expenses]
+      summary: Record expense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Expense' }
+      responses:
+        '201':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Expense' } } }
+          description: Created
+
+  /expenses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Expenses]
+      summary: Get expense
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Expense' } } }
+          description: OK
+    put:
+      tags: [Expenses]
+      summary: Update expense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Expense' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/Expense' } } }
+          description: OK
+    delete:
+      tags: [Expenses]
+      summary: Delete expense
+      responses:
+        '204': { description: Deleted }
+
+  /expenses/{id}/receipt:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Expenses]
+      summary: Upload expense receipt image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: Receipt URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receipt_url: { type: string }
+
+  /expenses/categories:
+    get:
+      tags: [Expenses]
+      summary: List expense categories
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+    post:
+      tags: [Expenses]
+      summary: Create expense category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                account_id: { type: string }
+      responses:
+        '201': { description: Created }
+
+  # ════════════════════════════════
+  # REPORTS
+  # ════════════════════════════════
+  /reports/sales-summary:
+    get:
+      tags: [Reports]
+      summary: Sales summary report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+        - name: group_by
+          in: query
+          schema: { type: string, enum: [day, week, month, outlet, cashier] }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesSummaryReport' } } }
+          description: OK
+
+  /reports/sales-by-product:
+    get:
+      tags: [Reports]
+      summary: Sales by product report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: category_id
+          in: query
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Product-wise sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    product_id: { type: string }
+                    product_name: { type: string }
+                    category: { type: string }
+                    qty_sold: { type: number }
+                    total_amount: { type: number }
+                    total_discount: { type: number }
+                    gross_profit: { type: number }
+
+  /reports/sales-by-category:
+    get:
+      tags: [Reports]
+      summary: Sales by category report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Category-wise sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    category: { type: string }
+                    total_amount: { type: number }
+                    qty_sold: { type: number }
+
+  /reports/sales-by-customer:
+    get:
+      tags: [Reports]
+      summary: Sales by customer report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Customer-wise sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    customer_id: { type: string }
+                    customer_name: { type: string }
+                    total_invoices: { type: integer }
+                    total_amount: { type: number }
+
+  /reports/sales-by-cashier:
+    get:
+      tags: [Reports]
+      summary: Sales by cashier / user report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Cashier-wise performance
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    user_id: { type: string }
+                    user_name: { type: string }
+                    total_invoices: { type: integer }
+                    total_amount: { type: number }
+
+  /reports/payment-collection:
+    get:
+      tags: [Reports]
+      summary: Payment collection report (mode-wise)
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Collection by mode
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: number }
+
+  /reports/stock-valuation:
+    get:
+      tags: [Reports]
+      summary: Stock valuation report
+      parameters:
+        - name: as_of_date
+          in: query
+          schema: { type: string, format: date }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+        - name: category_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Stock valuation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_value: { type: number }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        product_id: { type: string }
+                        product_name: { type: string }
+                        qty_on_hand: { type: number }
+                        valuation_rate: { type: number }
+                        total_value: { type: number }
+
+  /reports/stock-movement:
+    get:
+      tags: [Reports]
+      summary: Stock movement report
+      parameters:
+        - name: product_id
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Movement detail
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StockEntry' }
+
+  /reports/low-stock:
+    get:
+      tags: [Reports]
+      summary: Low stock alert report
+      parameters:
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Low stock items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    product_id: { type: string }
+                    product_name: { type: string }
+                    qty_on_hand: { type: number }
+                    reorder_level: { type: number }
+                    reorder_qty: { type: number }
+
+  /reports/expiry-alert:
+    get:
+      tags: [Reports]
+      summary: Near-expiry batch report
+      parameters:
+        - name: within_days
+          in: query
+          schema: { type: integer, default: 30 }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Near-expiry batches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    product_name: { type: string }
+                    batch_no: { type: string }
+                    exp_date: { type: string, format: date }
+                    qty_on_hand: { type: number }
+
+  /reports/purchase-summary:
+    get:
+      tags: [Reports]
+      summary: Purchase summary report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: vendor_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Purchase summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_orders: { type: integer }
+                  total_amount: { type: number }
+                  total_tax: { type: number }
+
+  /reports/party-balance:
+    get:
+      tags: [Reports]
+      summary: Customer / vendor outstanding balance report
+      parameters:
+        - name: party_type
+          in: query
+          required: true
+          schema: { type: string, enum: [customer, vendor] }
+        - name: as_of_date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Party balances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    party_id: { type: string }
+                    party_name: { type: string }
+                    total_invoiced: { type: number }
+                    total_paid: { type: number }
+                    balance_due: { type: number }
+                    overdue_amount: { type: number }
+
+  /reports/profit-by-product:
+    get:
+      tags: [Reports]
+      summary: Gross profit by product report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Profitability
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    product_id: { type: string }
+                    product_name: { type: string }
+                    qty_sold: { type: number }
+                    revenue: { type: number }
+                    cogs: { type: number }
+                    gross_profit: { type: number }
+                    gross_margin_pct: { type: number }
+
+  /reports/discount-analysis:
+    get:
+      tags: [Reports]
+      summary: Discount given report
+      parameters:
+        - name: from_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Discount summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_discount: { type: number }
+                  discount_by_cashier:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cashier_name: { type: string }
+                        total_discount: { type: number }
+
+  /reports/day-book:
+    get:
+      tags: [Reports]
+      summary: Day book (all transactions for a day)
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: outlet_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Day book entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LedgerEntry' }
+
+  /reports/export/{report_type}:
+    parameters:
+      - name: report_type
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+            - sales_summary
+            - sales_by_product
+            - stock_valuation
+            - party_balance
+            - gstr1
+            - gstr3b
+    get:
+      tags: [Reports]
+      summary: Export any report to CSV/Excel/PDF
+      parameters:
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, xlsx, pdf], default: xlsx }
+      responses:
+        '200':
+          description: File download
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+
+  # ════════════════════════════════
+  # NOTIFICATIONS
+  # ════════════════════════════════
+  /notifications/send:
+    post:
+      tags: [Notifications]
+      summary: Send invoice / document via WhatsApp / SMS / Email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationRequest' }
+      responses:
+        '200':
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id: { type: string }
+                  status: { type: string }
+
+  /notifications/templates:
+    get:
+      tags: [Notifications]
+      summary: List message templates
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    channel: { type: string }
+                    language: { type: string }
+                    body: { type: string }
+    post:
+      tags: [Notifications]
+      summary: Create message template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                channel: { type: string, enum: [whatsapp, sms, email] }
+                language: { type: string }
+                body: { type: string }
+                subject: { type: string, description: For email only }
+      responses:
+        '201': { description: Created }
+
+  /notifications/templates/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Notifications]
+      summary: Update template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body: { type: string }
+                subject: { type: string }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Notifications]
+      summary: Delete template
+      responses:
+        '204': { description: Deleted }
+
+  /notifications/logs:
+    get:
+      tags: [Notifications]
+      summary: Get notification delivery logs
+      parameters:
+        - name: channel
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [sent, failed, pending] }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Notification logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    channel: { type: string }
+                    recipient: { type: string }
+                    message: { type: string }
+                    status: { type: string }
+                    error: { type: string }
+                    sent_at: { type: string, format: date-time }
+
+  /notifications/payment-reminder:
+    post:
+      tags: [Notifications]
+      summary: Send payment reminders to overdue customers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overdue_days: { type: integer, description: Send to customers overdue by N days }
+                channel: { type: string, enum: [whatsapp, sms, email] }
+                template_id: { type: string }
+      responses:
+        '200':
+          description: Reminders sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent_count: { type: integer }
+                  failed_count: { type: integer }
+
+  # ════════════════════════════════
+  # WEIGHING MACHINE
+  # ════════════════════════════════
+  /weighing/devices:
+    get:
+      tags: [WeighingMachine]
+      summary: List registered weighing devices
+      responses:
+        '200':
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    outlet_id: { type: string }
+                    model: { type: string }
+                    port: { type: string }
+                    baud_rate: { type: integer }
+                    is_active: { type: boolean }
+    post:
+      tags: [WeighingMachine]
+      summary: Register weighing device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                outlet_id: { type: string }
+                model: { type: string, example: "YesWeigh YW-300" }
+                port: { type: string, example: "COM3" }
+                baud_rate: { type: integer, example: 9600 }
+      responses:
+        '201': { description: Registered }
+
+  /weighing/devices/{id}/read:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [WeighingMachine]
+      summary: Read current weight from device
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/WeighingReading' } } }
+          description: Current weight reading
+
+  /weighing/devices/{id}/tare:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [WeighingMachine]
+      summary: Tare (zero) the scale
+      responses:
+        '200': { description: Tare executed }
+
+  /weighing/devices/{id}/calibrate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [WeighingMachine]
+      summary: Calibrate weighing device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                known_weight_kg: { type: number }
+      responses:
+        '200': { description: Calibrated }
+
+  /weighing/devices/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [WeighingMachine]
+      summary: Check device connection status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected: { type: boolean }
+                  last_reading_at: { type: string, format: date-time }
+
+  # ════════════════════════════════
+  # PAYMENT GATEWAY
+  # ════════════════════════════════
+  /payment-gateway/initiate:
+    post:
+      tags: [PaymentGateway]
+      summary: Initiate online payment (UPI / card / net banking)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoice_id, amount, mode]
+              properties:
+                invoice_id: { type: string }
+                amount: { type: number }
+                mode: { type: string, enum: [upi, card, netbanking, wallet] }
+                upi_id: { type: string }
+                customer_phone: { type: string }
+                redirect_url: { type: string }
+      responses:
+        '200':
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id: { type: string }
+                  payment_url: { type: string }
+                  qr_code_base64: { type: string, description: UPI QR code }
+                  status: { type: string, enum: [pending, initiated] }
+
+  /payment-gateway/status/{transaction_id}:
+    parameters:
+      - name: transaction_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [PaymentGateway]
+      summary: Get payment transaction status
+      responses:
+        '200':
+          description: Transaction status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id: { type: string }
+                  status: { type: string, enum: [pending, success, failed, refunded] }
+                  amount: { type: number }
+                  gateway_ref: { type: string }
+                  paid_at: { type: string, format: date-time }
+
+  /payment-gateway/refund:
+    post:
+      tags: [PaymentGateway]
+      summary: Initiate payment refund
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transaction_id, amount]
+              properties:
+                transaction_id: { type: string }
+                amount: { type: number }
+                reason: { type: string }
+      responses:
+        '200':
+          description: Refund initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  refund_id: { type: string }
+                  status: { type: string }
+
+  /payment-gateway/webhook:
+    post:
+      tags: [PaymentGateway]
+      summary: Payment gateway webhook callback (public)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Acknowledged }
+
+  /payment-gateway/config:
+    get:
+      tags: [PaymentGateway]
+      summary: Get gateway configuration
+      responses:
+        '200':
+          description: Config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gateway: { type: string, enum: [razorpay, payu, cashfree, phonepe] }
+                  upi_vpa: { type: string }
+                  is_active: { type: boolean }
+    put:
+      tags: [PaymentGateway]
+      summary: Update gateway configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gateway: { type: string }
+                api_key: { type: string }
+                api_secret: { type: string }
+                upi_vpa: { type: string }
+                webhook_secret: { type: string }
+      responses:
+        '200': { description: Updated }
+
+  # ════════════════════════════════
+  # WEBHOOKS
+  # ════════════════════════════════
+  /webhooks/subscriptions:
+    get:
+      tags: [Webhooks]
+      summary: List webhook subscriptions
+      responses:
+        '200':
+          description: Subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    url: { type: string }
+                    events: { type: array, items: { type: string } }
+                    secret: { type: string }
+                    is_active: { type: boolean }
+    post:
+      tags: [Webhooks]
+      summary: Create webhook subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url: { type: string }
+                events:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - invoice.created
+                      - invoice.paid
+                      - invoice.cancelled
+                      - payment.received
+                      - stock.low
+                      - stock.updated
+                      - customer.created
+                      - purchase.received
+                      - session.closed
+                secret: { type: string }
+      responses:
+        '201': { description: Created }
+
+  /webhooks/subscriptions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Webhooks]
+      summary: Update subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string }
+                events: { type: array, items: { type: string } }
+                is_active: { type: boolean }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Webhooks]
+      summary: Delete subscription
+      responses:
+        '204': { description: Deleted }
+
+  /webhooks/subscriptions/{id}/test:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Webhooks]
+      summary: Send test event to webhook URL
+      responses:
+        '200': { description: Test sent }
+
+  /webhooks/logs:
+    get:
+      tags: [Webhooks]
+      summary: Get webhook delivery logs
+      parameters:
+        - name: subscription_id
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [delivered, failed] }
+        - name: page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    event: { type: string }
+                    url: { type: string }
+                    status_code: { type: integer }
+                    response: { type: string }
+                    delivered_at: { type: string, format: date-time }
+
+  # ════════════════════════════════
+  # SETTINGS
+  # ════════════════════════════════
+  /settings/invoice-sequence:
+    get:
+      tags: [Settings]
+      summary: Get invoice numbering sequences
+      responses:
+        '200':
+          description: Sequences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    doc_type: { type: string }
+                    prefix: { type: string }
+                    current_no: { type: integer }
+                    reset_yearly: { type: boolean }
+    put:
+      tags: [Settings]
+      summary: Update invoice numbering
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  doc_type: { type: string }
+                  prefix: { type: string }
+                  reset_yearly: { type: boolean }
+      responses:
+        '200': { description: Updated }
+
+  /settings/invoice-templates:
+    get:
+      tags: [Settings]
+      summary: List invoice print templates
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    type: { type: string, enum: [a4, thermal_2inch, thermal_3inch] }
+                    is_default: { type: boolean }
+    post:
+      tags: [Settings]
+      summary: Create / upload custom template
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                type: { type: string }
+                html_file: { type: string, format: binary }
+      responses:
+        '201': { description: Created }
+
+  /settings/tax-rates:
+    get:
+      tags: [Settings]
+      summary: List configured tax rates
+      responses:
+        '200':
+          description: Tax rates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    rate: { type: number }
+                    components:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          tax_type: { type: string, enum: [CGST, SGST, IGST, CESS] }
+                          rate: { type: number }
+    post:
+      tags: [Settings]
+      summary: Create tax rate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                rate: { type: number }
+                components:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      tax_type: { type: string }
+                      rate: { type: number }
+      responses:
+        '201': { description: Created }
+
+  /settings/price-lists:
+    get:
+      tags: [Settings]
+      summary: List price lists
+      responses:
+        '200':
+          description: Price lists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    currency: { type: string }
+                    is_buying: { type: boolean }
+                    is_selling: { type: boolean }
+    post:
+      tags: [Settings]
+      summary: Create price list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                is_buying: { type: boolean }
+                is_selling: { type: boolean }
+      responses:
+        '201': { description: Created }
+
+  /settings/price-lists/{id}/items:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Settings]
+      summary: Get prices in a price list
+      responses:
+        '200':
+          description: Item prices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    product_id: { type: string }
+                    variant_id: { type: string }
+                    price: { type: number }
+    put:
+      tags: [Settings]
+      summary: Set prices in price list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  product_id: { type: string }
+                  variant_id: { type: string }
+                  price: { type: number }
+      responses:
+        '200': { description: Updated }
+
+  /settings/loyalty-program:
+    get:
+      tags: [Settings]
+      summary: Get loyalty program config
+      responses:
+        '200':
+          description: Loyalty config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_enabled: { type: boolean }
+                  points_per_rupee: { type: number, example: 1 }
+                  redemption_rate: { type: number, description: "Rupees per point" }
+                  minimum_redemption: { type: number }
+                  expiry_days: { type: integer }
+    put:
+      tags: [Settings]
+      summary: Update loyalty program config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_enabled: { type: boolean }
+                points_per_rupee: { type: number }
+                redemption_rate: { type: number }
+                minimum_redemption: { type: number }
+                expiry_days: { type: integer }
+      responses:
+        '200': { description: Updated }
+
+  /settings/email:
+    get:
+      tags: [Settings]
+      summary: Get email (SMTP) settings
+      responses:
+        '200':
+          description: Email config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  host: { type: string }
+                  port: { type: integer }
+                  username: { type: string }
+                  use_tls: { type: boolean }
+                  from_name: { type: string }
+                  from_email: { type: string }
+    put:
+      tags: [Settings]
+      summary: Update email settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                host: { type: string }
+                port: { type: integer }
+                username: { type: string }
+                password: { type: string }
+                use_tls: { type: boolean }
+                from_name: { type: string }
+                from_email: { type: string }
+      responses:
+        '200': { description: Updated }
+
+  /settings/sms:
+    get:
+      tags: [Settings]
+      summary: Get SMS gateway settings
+      responses:
+        '200':
+          description: SMS config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: { type: string, enum: [msg91, textlocal, twilio, kaleyra] }
+                  sender_id: { type: string }
+                  api_key: { type: string }
+    put:
+      tags: [Settings]
+      summary: Update SMS settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider: { type: string }
+                sender_id: { type: string }
+                api_key: { type: string }
+                template_id: { type: string }
+      responses:
+        '200': { description: Updated }
+
+  /settings/whatsapp:
+    get:
+      tags: [Settings]
+      summary: Get WhatsApp API settings
+      responses:
+        '200':
+          description: WhatsApp config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: { type: string, enum: [meta_business, twilio, wati, interakt] }
+                  phone_number_id: { type: string }
+                  business_account_id: { type: string }
+                  access_token: { type: string }
+                  is_active: { type: boolean }
+    put:
+      tags: [Settings]
+      summary: Update WhatsApp settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider: { type: string }
+                phone_number_id: { type: string }
+                business_account_id: { type: string }
+                access_token: { type: string }
+      responses:
+        '200': { description: Updated }
+
+  /settings/gst-credentials:
+    get:
+      tags: [Settings]
+      summary: Get GST portal / IRP credentials
+      responses:
+        '200':
+          description: GST credentials (masked)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gstin: { type: string }
+                  username: { type: string }
+                  irp_client_id: { type: string }
+                  einvoice_enabled: { type: boolean }
+                  ewaybill_enabled: { type: boolean }
+    put:
+      tags: [Settings]
+      summary: Update GST credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gstin: { type: string }
+                username: { type: string }
+                password: { type: string }
+                irp_client_id: { type: string }
+                irp_client_secret: { type: string }
+      responses:
+        '200': { description: Updated }
+
+  /settings/backup:
+    post:
+      tags: [Settings]
+      summary: Trigger manual data backup
+      responses:
+        '200':
+          description: Backup initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+                  backup_url: { type: string }
+                  started_at: { type: string, format: date-time }
+
+  /settings/backup/list:
+    get:
+      tags: [Settings]
+      summary: List available backups
+      responses:
+        '200':
+          description: Backups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    created_at: { type: string, format: date-time }
+                    size_mb: { type: number }
+                    download_url: { type: string }
+
+  /settings/audit-log:
+    get:
+      tags: [Settings]
+      summary: Get system audit log
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: doc_type
+          in: query
+          schema: { type: string }
+        - name: from_date
+          in: query
+          schema: { type: string, format: date }
+        - name: to_date
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: per_page
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        user_id: { type: string }
+                        user_name: { type: string }
+                        action: { type: string, enum: [create, update, delete, submit, cancel, login, logout] }
+                        doc_type: { type: string }
+                        doc_id: { type: string }
+                        changes: { type: object }
+                        ip_address: { type: string }
+                        timestamp: { type: string, format: date-time }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }

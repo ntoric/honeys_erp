@@ -1,0 +1,74 @@
+openapi: 3.0.3
+info:
+  title: Retail POS Billing & Accounting API
+  description: |
+    Comprehensive REST API specification for a full-featured Retail POS Billing and Accounting
+    software system. Covers all modules including: POS transactions, inventory, GST/tax compliance,
+    accounting, customer management, vendor management, purchase orders, reporting, user management,
+    webhooks, and integrations (weighing machines, barcode, WhatsApp/SMS, payment gateways).
+
+    Designed for Indian retail requirements including GST, e-Invoice (IRN), e-Way Bill, and UPI.
+    Applicable to ERPNext / Frappe custom app implementations.
+
+    ## Authentication
+    All endpoints require a Bearer JWT token unless marked as public.
+    Obtain a token via `POST /auth/login`.
+
+  version: "1.0.0"
+  contact:
+    name: Hexonics POS API
+    email: dev@hexonics.in
+  license:
+    name: MIT
+
+servers:
+  - url: https://api.yourpos.in/api/v1
+    description: Production
+  - url: https://staging.yourpos.in/api/v1
+    description: Staging
+
+tags:
+  - name: Auth
+    description: Authentication & session management
+  - name: Users
+    description: User & role management
+  - name: Company
+    description: Company / branch / outlet settings
+  - name: Products
+    description: Product / item master
+  - name: Categories
+    description: Product categories & sub-categories
+  - name: Inventory
+    description: Stock management, adjustments, transfers
+  - name: Barcode
+    description: Barcode generation & lookup
+  - name: Customers
+    description: Customer master & loyalty
+  - name: Vendors
+    description: Vendor / supplier master
+  - name: POS
+    description: Point-of-sale sessions & transactions
+  - name: Sales
+    description: Sales invoices, returns & credit notes
+  - name: Purchase
+    description: Purchase orders, receipts & returns
+  - name: Payments
+    description: Payments, receipts & payment modes
+  - name: GST
+    description: GST compliance — GSTR-1, GSTR-3B, e-Invoice, e-Way Bill
+  - name: Accounting
+    description: Chart of accounts, journal entries, ledgers
+  - name: Expenses
+    description: Expense tracking & petty cash
+  - name: Reports
+    description: Business reports & analytics
+  - name: Notifications
+    description: WhatsApp, SMS & email notifications
+  - name: WeighingMachine
+    description: YesWeigh / weighing scale integration
+  - name: PaymentGateway
+    description: UPI, card & online payment gateway
+  - name: Webhooks
+    description: Webhook subscriptions
+  - name: Settings
+    description: System & application settings
