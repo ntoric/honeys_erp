@@ -20,6 +20,7 @@ import {
 import { PartiesService, Party } from '@/api';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Validators, validateForm } from '@/lib/validators';
 
 interface QuickAddPartyDialogProps {
   open: boolean;
@@ -38,16 +39,36 @@ export default function QuickAddPartyDialog({
 }: QuickAddPartyDialogProps) {
   const queryClient = useQueryClient();
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [partyType, setPartyType] = React.useState<string>(initialType);
   const [category, setCategory] = React.useState<string>('Retail');
 
   React.useEffect(() => {
     if (open) {
       setErrorMsg(null);
+      setErrors({});
       setPartyType(editData?.party_type || initialType);
       setCategory(editData?.category || 'Retail');
     }
   }, [open, editData, initialType]);
+
+  const handleApiError = (err: any) => {
+    const message = err.body?.error || err.message || 'An unexpected error occurred';
+    setErrorMsg(message);
+    
+    if (err.body?.errors) {
+      const mappedErrors: Record<string, string> = {};
+      for (const [key, val] of Object.entries(err.body.errors)) {
+        if (Array.isArray(val) && val.length > 0) {
+          mappedErrors[key] = val[0];
+        } else if (typeof val === 'string') {
+          mappedErrors[key] = val;
+        }
+      }
+      setErrors(mappedErrors);
+    }
+    toast.error(message);
+  };
 
   const createMutation = useMutation({
     mutationFn: (newParty: Party) => PartiesService.postParties(newParty),
@@ -58,11 +79,7 @@ export default function QuickAddPartyDialog({
       onSuccess(data);
       onClose();
     },
-    onError: (err: any) => {
-      const message = err.body?.error || err.message || 'An unexpected error occurred';
-      setErrorMsg(message);
-      toast.error(message);
-    }
+    onError: handleApiError
   });
 
   const updateMutation = useMutation({
@@ -74,11 +91,7 @@ export default function QuickAddPartyDialog({
       onSuccess(data);
       onClose();
     },
-    onError: (err: any) => {
-      const message = err.body?.error || err.message || 'An unexpected error occurred';
-      setErrorMsg(message);
-      toast.error(message);
-    }
+    onError: handleApiError
   });
 
   const isEdit = !!editData;
@@ -97,11 +110,48 @@ export default function QuickAddPartyDialog({
       is_active: editData?.is_active ?? true,
       is_blocked: editData?.is_blocked ?? false,
     };
-    
+
+    // Client-side validations
+    const rules = {
+      name: [
+        Validators.required('Full Name is required'),
+        Validators.minLength(3, 'Name must be at least 3 characters'),
+        Validators.maxLength(100, 'Name must be at most 100 characters')
+      ],
+      mobile: [
+        Validators.required('Mobile Number is required'),
+        Validators.phone('Mobile number must be between 10 to 15 digits')
+      ],
+      email: [
+        Validators.email('Please enter a valid email format')
+      ],
+      balance: [
+        Validators.min(0, 'Opening balance cannot be negative')
+      ]
+    };
+
+    const formErrors = validateForm(partyData, rules);
+    if (Object.keys(formErrors).length > 0) {
+      setErrors(formErrors);
+      toast.warning('Please correct all validation errors inside the form');
+      return;
+    }
+
+    setErrors({});
     if (isEdit) {
       updateMutation.mutate(partyData);
     } else {
       createMutation.mutate(partyData);
+    }
+  };
+
+  const handleFieldChange = (field: string) => {
+    if (errors[field]) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
     }
   };
 
@@ -126,13 +176,41 @@ export default function QuickAddPartyDialog({
                 {errorMsg}
               </Alert>
             )}
-            <TextField name="name" label="Full Name" fullWidth required variant="outlined" defaultValue={editData?.name} />
+            <TextField 
+              name="name" 
+              label="Full Name" 
+              fullWidth 
+              required 
+              variant="outlined" 
+              defaultValue={editData?.name} 
+              error={!!errors.name}
+              helperText={errors.name}
+              onChange={() => handleFieldChange('name')}
+            />
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField name="mobile" label="Mobile Number" fullWidth required defaultValue={editData?.mobile} />
+                <TextField 
+                  name="mobile" 
+                  label="Mobile Number" 
+                  fullWidth 
+                  required 
+                  defaultValue={editData?.mobile} 
+                  error={!!errors.mobile}
+                  helperText={errors.mobile}
+                  onChange={() => handleFieldChange('mobile')}
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField name="email" label="Email Address" fullWidth type="email" defaultValue={editData?.email} />
+                <TextField 
+                  name="email" 
+                  label="Email Address" 
+                  fullWidth 
+                  type="email" 
+                  defaultValue={editData?.email} 
+                  error={!!errors.email}
+                  helperText={errors.email}
+                  onChange={() => handleFieldChange('email')}
+                />
               </Grid>
             </Grid>
             <Grid container spacing={2}>
@@ -172,6 +250,9 @@ export default function QuickAddPartyDialog({
               fullWidth
               type="number"
               defaultValue={editData?.balance || 0}
+              error={!!errors.balance}
+              helperText={errors.balance}
+              onChange={() => handleFieldChange('balance')}
               slotProps={{
                 input: {
                   startAdornment: <InputAdornment position="start">₹</InputAdornment>,

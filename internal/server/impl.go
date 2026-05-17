@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	"pos-api/internal/models"
 	"pos-api/internal/sales"
+	"pos-api/internal/validator"
 	"strings"
 )
 
@@ -82,6 +83,22 @@ func (s *ServerImpl) PostAuthLogin(c *gin.Context) {
 	var body LoginRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	v := validator.New()
+	v.Required("username", body.Username, "Username is required")
+	v.Required("password", body.Password, "Password is required")
+
+	if v.HasErrors() {
+		var firstErr string
+		for _, errs := range v.Errors {
+			if len(errs) > 0 {
+				firstErr = errs[0]
+				break
+			}
+		}
+		c.JSON(400, gin.H{"error": firstErr, "errors": v.Errors})
 		return
 	}
 
@@ -1989,32 +2006,29 @@ func (s *ServerImpl) PostParties(c *gin.Context) {
 		return
 	}
 
+	v := validator.New()
+
 	var name string
 	if body.Name != nil {
 		name = *body.Name
 	}
-	if name == "" {
-		c.JSON(400, gin.H{"error": "Name is required"})
-		return
-	}
+	v.Required("name", name, "Name is required")
+	v.MinLength("name", name, 3, "Name must be at least 3 characters")
+	v.MaxLength("name", name, 100, "Name must be at most 100 characters")
 
 	var mobile string
 	if body.Mobile != nil {
 		mobile = *body.Mobile
 	}
-	if mobile == "" {
-		c.JSON(400, gin.H{"error": "Mobile number is required"})
-		return
-	}
+	v.Required("mobile", mobile, "Mobile number is required")
+	v.Phone("mobile", mobile, "Invalid mobile number format (must be 10-15 digits)")
 
 	var partyType string
 	if body.PartyType != nil {
 		partyType = string(*body.PartyType)
 	}
-	if partyType != "customer" && partyType != "vendor" {
-		c.JSON(400, gin.H{"error": "Invalid or missing party type"})
-		return
-	}
+	v.Required("party_type", partyType, "Party type is required")
+	v.Check(partyType == "customer" || partyType == "vendor", "party_type", "Party type must be 'customer' or 'vendor'")
 
 	var category string
 	if body.Category != nil {
@@ -2027,10 +2041,24 @@ func (s *ServerImpl) PostParties(c *gin.Context) {
 	if body.Email != nil {
 		email = *body.Email
 	}
+	v.Email("email", email, "Invalid email format")
 
 	var balance float32
 	if body.Balance != nil {
 		balance = *body.Balance
+	}
+	v.Min("balance", float64(balance), 0.0, "Opening balance cannot be negative")
+
+	if v.HasErrors() {
+		var firstErr string
+		for _, errs := range v.Errors {
+			if len(errs) > 0 {
+				firstErr = errs[0]
+				break
+			}
+		}
+		c.JSON(400, gin.H{"error": firstErr, "errors": v.Errors})
+		return
 	}
 
 	var isBlocked bool
