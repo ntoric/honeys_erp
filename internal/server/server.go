@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"pos-api/internal/auth"
-	"pos-api/internal/categories"
+	"pos-api/internal/items"
 	"pos-api/internal/parties"
 	"pos-api/internal/sales"
 )
@@ -14,7 +14,8 @@ type ServerImpl struct {
 	salesService      sales.SalesService
 	authService       auth.AuthService
 	partiesService    parties.PartiesService
-	categoriesService categories.CategoriesService
+	categoriesService items.CategoriesService
+	itemsService      items.ItemsService
 }
 
 func (s *ServerImpl) GetAuthService() auth.AuthService {
@@ -34,6 +35,7 @@ func NewServer(db *gorm.DB) *ServerImpl {
 		salesService:      sales.NewSalesService(db),
 		authService:       auth.NewAuthService(db),
 		partiesService:    parties.NewPartiesService(db),
-		categoriesService: categories.NewCategoriesService(db),
+		categoriesService: items.NewCategoriesService(db),
+		itemsService:      items.NewItemsService(db),
 	}
 }

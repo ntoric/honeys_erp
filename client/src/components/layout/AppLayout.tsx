@@ -116,7 +116,7 @@ const AppBar = styled(MuiAppBar, {
   }),
 }));
 
-const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' })<{open: boolean}>(
+const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' })<{ open: boolean }>(
   ({ theme, open }) => ({
     width: drawerWidth,
     flexShrink: 0,
@@ -181,10 +181,19 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/', permission: 'view_dashboard' },
   { text: 'Parties', icon: <PeopleIcon />, path: '/parties', permission: 'view_parties' },
+  {
+    text: 'Inventory',
+    icon: <StoreIcon />,
+    permission: 'view_inventory',
+    children: [
+      { text: 'Items', path: '/inventory/items', permission: 'view_inventory' },
+      { text: 'Categories', path: '/inventory/categories', permission: 'view_inventory' },
+    ]
+  },
   { text: 'POS Billing', icon: <PointOfSaleIcon />, path: '/sales', permission: 'pos_billing' },
-  { 
-    text: 'Sales', 
-    icon: <ShoppingCartIcon />, 
+  {
+    text: 'Sales',
+    icon: <ShoppingCartIcon />,
     permission: 'view_sales',
     children: [
       { text: 'Sales Invoices', path: '/sales/invoices', permission: 'view_sales' },
@@ -192,9 +201,9 @@ const menuItems = [
       { text: 'Payment In', path: '/sales/payments', permission: 'view_sales' },
     ]
   },
-  { 
-    text: 'Purchase', 
-    icon: <LocalShippingIcon />, 
+  {
+    text: 'Purchase',
+    icon: <LocalShippingIcon />,
     permission: 'view_purchase',
     children: [
       { text: 'Purchase Invoices', path: '/purchase/invoices', permission: 'view_purchase' },
@@ -203,19 +212,10 @@ const menuItems = [
     ]
   },
   { text: 'Expenses', icon: <ReceiptIcon />, path: '/expenses', permission: 'view_expenses' },
-  { 
-    text: 'Inventory', 
-    icon: <StoreIcon />, 
-    permission: 'view_inventory',
-    children: [
-      { text: 'Items', path: '/inventory/items', permission: 'view_inventory' },
-      { text: 'Categories', path: '/inventory/categories', permission: 'view_inventory' },
-    ]
-  },
   { text: 'Staff & Payroll', icon: <BadgeIcon />, path: '/staff', permission: 'view_staff' },
-  { 
-    text: 'Accounting', 
-    icon: <AccountBalanceWalletIcon />, 
+  {
+    text: 'Accounting',
+    icon: <AccountBalanceWalletIcon />,
     permission: 'view_accounting',
     children: [
       { text: 'Cash & Bank', path: '/accounting/cash-bank', permission: 'view_accounting' },
@@ -224,18 +224,18 @@ const menuItems = [
     ]
   },
   { text: 'Reports', icon: <AssessmentIcon />, path: '/reports', permission: 'view_reports' },
-  { 
-    text: 'User Management', 
-    icon: <AdminPanelSettingsIcon />, 
+  {
+    text: 'User Management',
+    icon: <AdminPanelSettingsIcon />,
     permission: 'manage_users',
     children: [
       { text: 'Users', path: '/user-management/users', permission: 'manage_users' },
       { text: 'Roles & Permissions', path: '/user-management/roles', permission: 'manage_users' },
     ]
   },
-  { 
-    text: 'Maintenance', 
-    icon: <BuildCircleIcon />, 
+  {
+    text: 'Maintenance',
+    icon: <BuildCircleIcon />,
     permission: 'manage_system',
     children: [
       { text: 'Stores', path: '/maintenance/stores', permission: 'manage_stores' },
@@ -260,7 +260,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (pathname === '/sales') {
-      setOpen(false);
+      Promise.resolve().then(() => {
+        setOpen(false);
+      });
     }
   }, [pathname]);
 
@@ -323,10 +325,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <>
       <DrawerHeader>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pl: 1 }}>
-          <Box sx={{ 
-            backgroundColor: theme.palette.primary.main, 
-            borderRadius: '12px', 
-            p: 0.8, 
+          <Box sx={{
+            backgroundColor: theme.palette.primary.main,
+            borderRadius: '12px',
+            p: 0.8,
             display: 'flex',
             boxShadow: '0 8px 16px rgba(76, 59, 207, 0.2)'
           }}>
@@ -388,14 +390,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                 }
                               }}
                             >
-                              <ListItemText 
-                                primary={child.text} 
-                                sx={{ 
-                                  '& .MuiTypography-root': { 
-                                    fontWeight: isSelected ? 800 : 600, 
-                                    fontSize: '0.85rem' 
-                                  } 
-                                }} 
+                              <ListItemText
+                                primary={child.text}
+                                sx={{
+                                  '& .MuiTypography-root': {
+                                    fontWeight: isSelected ? 800 : 600,
+                                    fontSize: '0.85rem'
+                                  }
+                                }}
                               />
                             </ListItemButton>
                           </Link>
@@ -494,7 +496,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             >
               <MenuIcon />
             </IconButton>
-            
+
             <Search sx={{ display: { xs: 'none', md: 'block' } }}>
               <SearchIconWrapper>
                 <SearchIcon />
@@ -506,7 +508,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </Search>
 
             {/* Section Switcher */}
-            <ToggleButtonGroup
+            {/* <ToggleButtonGroup
               value={section}
               exclusive
               onChange={(_, val) => val && setSection(val)}
@@ -545,7 +547,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <BusinessIcon sx={{ fontSize: 18 }} />
                 Wholesale
               </ToggleButton>
-            </ToggleButtonGroup>
+            </ToggleButtonGroup> */}
 
             {/* Store Switcher (Superadmin only) */}
             {(hasPermission('manage_stores') || hasPermission('all')) && (
@@ -591,13 +593,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </Box>
                   <Divider />
                   {stores.map((s) => (
-                    <MenuItem 
-                      key={s.id} 
+                    <MenuItem
+                      key={s.id}
                       onClick={() => { switchStore(s.id); setStoreAnchorEl(null); }}
                       selected={currentStore?.id === s.id}
-                      sx={{ 
-                        borderRadius: '8px', 
-                        mx: 1, 
+                      sx={{
+                        borderRadius: '8px',
+                        mx: 1,
                         my: 0.5,
                         fontWeight: 600,
                         '&.Mui-selected': {
@@ -630,25 +632,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <NotificationsIcon sx={{ color: '#94a3b8', fontSize: 20 }} />
               </IconButton>
             </Tooltip>
-            <Box 
+            <Box
               onClick={handleProfileMenuOpen}
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: 1.2, 
-                backgroundColor: '#ffffff', 
-                p: 0.4, 
-                pr: { xs: 0.4, sm: 1.5 }, 
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.2,
+                backgroundColor: '#ffffff',
+                p: 0.4,
+                pr: { xs: 0.4, sm: 1.5 },
                 borderRadius: '10px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                 cursor: 'pointer',
                 '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.02) }
               }}
             >
-              <Avatar 
-                sx={{ 
-                  bgcolor: theme.palette.primary.main, 
-                  width: { xs: 32, sm: 38 }, 
+              <Avatar
+                sx={{
+                  bgcolor: theme.palette.primary.main,
+                  width: { xs: 32, sm: 38 },
                   height: { xs: 32, sm: 38 },
                   fontSize: '0.8rem',
                   fontWeight: 700,
@@ -662,7 +664,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#94a3b8' }}>{user?.role?.name || 'User'}</Typography>
               </Box>
             </Box>
-            
+
             <Menu
               anchorEl={anchorEl}
               open={Boolean(anchorEl)}

@@ -64,11 +64,19 @@ export default function SalesInvoicesPage() {
     )
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => SalesService.cancelSalesInvoice(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-invoices'] });
+      handleMenuClose();
+    }
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => SalesService.deleteSalesInvoices(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-invoices'] });
-      setAnchorEl(null);
+      handleMenuClose();
     }
   });
 
@@ -109,6 +117,23 @@ export default function SalesInvoicesPage() {
     document.body.removeChild(link);
   };
 
+  const handleExportAll = async () => {
+    try {
+      const csvContent = await SalesService.getSalesInvoicesBulkExport();
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `sales_invoices_all_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Export all failed', error);
+    }
+  };
+
   const handleBulkAction = async (action: 'delete' | 'cancel' | 'export') => {
     if (action === 'export') {
       const selectedData = invoices.filter(inv => selectionModel.ids.has(inv.id));
@@ -120,18 +145,10 @@ export default function SalesInvoicesPage() {
 
     try {
       const selectedIds = Array.from(selectionModel.ids) as string[];
-      if (action === 'delete') {
-        for (const id of selectedIds) {
-          await SalesService.deleteSalesInvoices(id);
-        }
-      } else if (action === 'cancel') {
-        for (const id of selectedIds) {
-          const invoice = invoices.find(inv => inv.id === id);
-          if (invoice) {
-            await (SalesService as any).putSalesInvoices(id, { ...invoice, status: 'cancelled' });
-          }
-        }
-      }
+      await SalesService.postSalesInvoicesBulkAction({
+        action: action,
+        ids: selectedIds
+      });
       queryClient.invalidateQueries({ queryKey: ['sales-invoices'] });
       setSelectionModel({ type: 'include', ids: new Set<string>() });
     } catch (error) {
@@ -273,7 +290,7 @@ export default function SalesInvoicesPage() {
             variant="outlined"
             startIcon={<FileDownloadIcon />}
             sx={{ borderRadius: '12px', fontWeight: 700, textTransform: 'none', px: 3 }}
-            onClick={() => handleExport(invoices)}
+            onClick={handleExportAll}
           >
             Export All
           </Button>
@@ -409,7 +426,7 @@ export default function SalesInvoicesPage() {
             Last 30 Days
           </Button>
 
-          {selectionModel.length > 0 && (
+          {selectionModel.ids && selectionModel.ids.size > 0 && (
             <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
               <Button 
                 variant="outlined" 
@@ -449,7 +466,7 @@ export default function SalesInvoicesPage() {
             loading={isLoading}
             checkboxSelection
             disableRowSelectionOnClick
-            onRowSelectionModelChange={(newSelectionModel) => setSelectionModel(newSelectionModel)}
+            onRowSelectionModelChange={(newSelectionModel: any) => setSelectionModel(newSelectionModel)}
             rowSelectionModel={selectionModel}
             onRowClick={(params) => router.push(`/sales/invoices/view/${params.row.id}`)}
             sx={{
@@ -498,8 +515,25 @@ export default function SalesInvoicesPage() {
         <MenuItem onClick={() => { router.push(`/sales/invoices/edit/${activeRowId}`); handleMenuClose(); }}>
           <EditIcon sx={{ mr: 2, fontSize: 18, color: '#64748b' }} /> Edit Invoice
         </MenuItem>
-        <MenuItem onClick={() => { if (activeRowId) deleteMutation.mutate(activeRowId); }} sx={{ color: '#ef4444' }}>
+        <MenuItem 
+          onClick={() => { 
+            if (activeRowId && window.confirm('Are you sure you want to cancel this invoice? This will revert item stocks and customer balance.')) {
+              cancelMutation.mutate(activeRowId); 
+            }
+          }} 
+          sx={{ color: theme.palette.warning.main }}
+        >
           <CancelIcon sx={{ mr: 2, fontSize: 18 }} /> Cancel Invoice
+        </MenuItem>
+        <MenuItem 
+          onClick={() => { 
+            if (activeRowId && window.confirm('Are you sure you want to permanently delete this invoice? This will also revert stocks and balance.')) {
+              deleteMutation.mutate(activeRowId); 
+            }
+          }} 
+          sx={{ color: theme.palette.error.main }}
+        >
+          <DeleteIcon sx={{ mr: 2, fontSize: 18 }} /> Delete Invoice
         </MenuItem>
       </Menu>
     </Box>

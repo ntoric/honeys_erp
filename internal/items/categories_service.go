@@ -1,4 +1,4 @@
-package categories
+package items
 
 import (
 	"errors"
@@ -181,9 +181,9 @@ func (s *categoriesService) DeleteCategory(storeID string, id string) error {
 func (s *categoriesService) BulkAction(storeID string, action string, ids []string) error {
 	log.Printf("[CategoriesService] Performing bulk action: %s on %d items in store %s", action, len(ids), storeID)
 	switch action {
-	case "activate":
+	case "activate", "enable":
 		return s.db.Model(&models.Category{}).Where("store_id = ? AND id IN ?", storeID, ids).Update("is_active", true).Error
-	case "deactivate":
+	case "deactivate", "disable":
 		return s.db.Model(&models.Category{}).Where("store_id = ? AND id IN ?", storeID, ids).Update("is_active", false).Error
 	case "delete":
 		return s.db.Where("store_id = ? AND id IN ?", storeID, ids).Delete(&models.Category{}).Error

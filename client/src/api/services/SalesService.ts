@@ -1,16 +1,10 @@
-import { db, generateId } from '@/lib/db';
-import type { NotificationRequest } from '../models/NotificationRequest';
-import type { PaginationMeta } from '../models/PaginationMeta';
-import type { SalesInvoice } from '../models/SalesInvoice';
-import type { SalesLineItem } from '../models/SalesLineItem';
 import type { CancelablePromise } from '../core/CancelablePromise';
+import { OpenAPI } from '../core/OpenAPI';
+import { request as __request } from '../core/request';
+import type { SalesInvoice } from '../models/SalesInvoice';
+import type { PaginationMeta } from '../models/PaginationMeta';
 
 export class SalesService {
-    private static getActiveSection(): 'retail' | 'wholesale' {
-        if (typeof window === 'undefined') return 'retail';
-        return (localStorage.getItem('pos_active_section') as any) || 'retail';
-    }
-
     /**
      * List sales invoices
      */
@@ -27,49 +21,28 @@ export class SalesService {
     ): CancelablePromise<{
         data?: Array<SalesInvoice>;
         meta?: PaginationMeta;
+        summary?: {
+            total_sales: number;
+            paid_amount: number;
+            unpaid_amount: number;
+            cancelled_count: number;
+        };
     }> {
-        return (async () => {
-            const section = this.getActiveSection();
-            let collection = db.salesInvoices.where('section').equals(section);
-
-            if (status) {
-                collection = collection.filter(i => i.status === status);
-            }
-
-            if (customerId) {
-                collection = collection.filter(i => i.partyId === customerId);
-            }
-
-            if (fromDate) {
-                collection = collection.filter(i => i.invoiceDate >= fromDate);
-            }
-
-            if (toDate) {
-                collection = collection.filter(i => i.invoiceDate <= toDate);
-            }
-
-            if (q) {
-                const search = q.toLowerCase();
-                collection = collection.filter(i => 
-                    i.invoiceNo.toLowerCase().includes(search) || 
-                    i.partyName.toLowerCase().includes(search)
-                );
-            }
-
-            const allItems = await collection.toArray();
-            const total = allItems.length;
-            const data = allItems.slice((page - 1) * perPage, page * perPage);
-
-            return {
-                data: data as any,
-                meta: {
-                    page,
-                    per_page: perPage,
-                    total,
-                    total_pages: Math.ceil(total / perPage)
-                }
-            };
-        })() as any;
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/sales/invoices',
+            query: {
+                'invoice_type': invoiceType,
+                'status': status,
+                'customer_id': customerId,
+                'outlet_id': outletId,
+                'from_date': fromDate,
+                'to_date': toDate,
+                'q': q,
+                'page': page,
+                'per_page': perPage,
+            },
+        });
     }
 
     /**
@@ -78,23 +51,27 @@ export class SalesService {
     public static postSalesInvoices(
         requestBody: SalesInvoice,
     ): CancelablePromise<SalesInvoice> {
-        const item = {
-            ...requestBody,
-            id: requestBody.id || generateId(),
-            section: this.getActiveSection(),
-            invoice_date: (requestBody as any).invoice_date || (requestBody as any).invoiceDate || new Date().toISOString(),
-            status: requestBody.status || 'Paid',
-        };
-        return db.salesInvoices.add(item as any).then(() => item) as any;
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/sales/invoices',
+            body: requestBody,
+            mediaType: 'application/json',
+        });
     }
 
     /**
-     * Get sales invoice
+     * Get sales invoice by ID
      */
     public static getSalesInvoices1(
         id: string,
     ): CancelablePromise<SalesInvoice> {
-        return db.salesInvoices.get(id) as any;
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/sales/invoices/{id}',
+            path: {
+                'id': id,
+            },
+        });
     }
 
     /**
@@ -104,16 +81,72 @@ export class SalesService {
         id: string,
         requestBody: SalesInvoice,
     ): CancelablePromise<SalesInvoice> {
-        return db.salesInvoices.update(id, requestBody).then(() => requestBody) as any;
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/sales/invoices/{id}',
+            path: {
+                'id': id,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+        });
     }
 
     /**
-     * Cancel invoice
+     * Soft delete invoice
      */
     public static deleteSalesInvoices(
         id: string,
     ): CancelablePromise<any> {
-        return db.salesInvoices.update(id, { status: 'Cancelled' }) as any;
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/sales/invoices/{id}',
+            path: {
+                'id': id,
+            },
+        });
+    }
+
+    /**
+     * Cancel invoice (dedicated endpoint)
+     */
+    public static cancelSalesInvoice(
+        id: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/sales/invoices/{id}/cancel',
+            path: {
+                'id': id,
+            },
+        });
+    }
+
+    /**
+     * Bulk actions for sales invoices (Cancel/Delete)
+     */
+    public static postSalesInvoicesBulkAction(
+        requestBody: {
+            action: string;
+            ids: Array<string>;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/sales/invoices/bulk-action',
+            body: requestBody,
+            mediaType: 'application/json',
+        });
+    }
+
+    /**
+     * Bulk export sales invoices as CSV
+     */
+    public static getSalesInvoicesBulkExport(): CancelablePromise<string> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/sales/invoices/bulk-export',
+        });
     }
 
     /**
@@ -123,6 +156,15 @@ export class SalesService {
         id: string,
         template?: 'a4' | 'thermal_2inch' | 'thermal_3inch',
     ): CancelablePromise<Blob> {
-        return Promise.resolve(new Blob(['PDF content'], { type: 'application/pdf' })) as any;
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/sales/invoices/{id}/pdf',
+            path: {
+                'id': id,
+            },
+            query: {
+                'template': template,
+            },
+        });
     }
 }

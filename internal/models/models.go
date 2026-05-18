@@ -33,30 +33,33 @@ type Category struct {
 }
 
 type Product struct {
-	gorm.Model
-	ID                        string `gorm:"primaryKey"`
-	SKU                       string `gorm:"uniqueIndex"`
-	Name                      string
-	Description               string
-	ProductType               string // "Product" or "Service"
-	CategoryID                string
-	EnableBatching            bool
-	ItemCode                  string `gorm:"index"`
-	HSNCode                   string
-	MeasuringUnit             string
-	StockQuantity             float32
-	LowStockWarning           bool
-	LowStockQuantity          float32
-	SalePrice                 float32
-	SalePriceTaxInclusive     bool
-	PurchasePrice             float32
-	PurchasePriceTaxInclusive bool
-	GSTRate                   float32
-	DiscountOnSale            float32
-	Barcode                   string
-	ExpiryDate                *string // ISO date string
-	IsDraft                   bool `gorm:"default:false"`
-	IsActive                  bool `gorm:"default:true"`
+	ID                        string         `gorm:"primaryKey" json:"id"`
+	CreatedAt                 time.Time      `json:"created_at"`
+	UpdatedAt                 time.Time      `json:"updated_at"`
+	DeletedAt                 gorm.DeletedAt `gorm:"index" json:"-"`
+	SKU                       string         `gorm:"uniqueIndex" json:"sku"`
+	Name                      string         `json:"name"`
+	Description               string         `json:"description"`
+	ProductType               string         `json:"product_type"` // "Product" or "Service"
+	CategoryID                string         `json:"category_id"`
+	EnableBatching            bool           `json:"enable_batching"`
+	ItemCode                  string         `gorm:"index" json:"item_code"`
+	HSNCode                   string         `json:"hsn_code"`
+	MeasuringUnit             string         `json:"measuring_unit"`
+	StockQuantity             float32        `json:"stock_quantity"`
+	LowStockWarning           bool           `json:"low_stock_warning"`
+	LowStockQuantity          float32        `json:"low_stock_quantity"`
+	SalePrice                 float32        `json:"sale_price"`
+	WholesalePrice            float32        `json:"wholesale_price"`
+	SalePriceTaxInclusive     bool           `json:"sale_price_tax_inclusive"`
+	PurchasePrice             float32        `json:"purchase_price"`
+	PurchasePriceTaxInclusive bool           `json:"purchase_price_tax_inclusive"`
+	GSTRate                   float32        `json:"gst_rate"`
+	DiscountOnSale            float32        `json:"discount_on_sale"`
+	Barcode                   string         `json:"barcode"`
+	ExpiryDate                *string        `json:"expiry_date"` // ISO date string
+	IsDraft                   bool           `gorm:"default:false" json:"is_draft"`
+	IsActive                  bool           `gorm:"default:true" json:"is_active"`
 }
 
 type Customer struct {
@@ -86,53 +89,54 @@ type Party struct {
 
 type SalesInvoice struct {
 	gorm.Model
-	ID              string `gorm:"primaryKey"`
-	InvoiceNo       string `gorm:"uniqueIndex"`
-	PartyID         string `gorm:"index"`
-	PartyName       string
-	PartyMobile     string
-	InvoiceDate     string
-	DueDate         string
-	PaymentTerms    int
-	Status          string // draft, paid, partially_paid, unpaid, cancelled
-	Subtotal        float32
-	TaxableAmount   float32
-	TotalTax        float32
-	TotalDiscount   float32
-	RoundOff        float32
-	GrandTotal      float32
-	PaidAmount      float32
-	BalanceAmount   float32
-	PaymentMethod   string
-	Notes           string
-	Signature       string
-	IsDraft         bool `gorm:"default:false"`
-	Items           []SalesInvoiceItem `gorm:"foreignKey:InvoiceID"`
-	Charges         []SalesInvoiceCharge `gorm:"foreignKey:InvoiceID"`
+	ID              string `gorm:"primaryKey" json:"id"`
+	StoreID         string `gorm:"index;uniqueIndex:idx_store_invoice_no;default:'store-default'" json:"store_id"`
+	InvoiceNo       string `gorm:"uniqueIndex:idx_store_invoice_no" json:"invoice_no"`
+	PartyID         string `gorm:"index" json:"party_id"`
+	PartyName       string `json:"party_name"`
+	PartyMobile     string `json:"party_mobile"`
+	InvoiceDate     string `json:"invoice_date"`
+	DueDate         string `json:"due_date"`
+	PaymentTerms    int    `json:"payment_terms"`
+	Status          string `json:"status"` // draft, paid, partially_paid, unpaid, cancelled
+	Subtotal        float32 `json:"subtotal"`
+	TaxableAmount   float32 `json:"taxable_amount"`
+	TotalTax        float32 `json:"total_tax"`
+	TotalDiscount   float32 `json:"total_discount"`
+	RoundOff        float32 `json:"round_off"`
+	GrandTotal      float32 `json:"grand_total"`
+	PaidAmount      float32 `json:"paid_amount"`
+	BalanceAmount   float32 `json:"balance_amount"`
+	PaymentMethod   string `json:"payment_method"`
+	Notes           string `json:"notes"`
+	Signature       string `json:"signature"`
+	IsDraft         bool `gorm:"default:false" json:"is_draft"`
+	Items           []SalesInvoiceItem `gorm:"foreignKey:InvoiceID" json:"items"`
+	Charges         []SalesInvoiceCharge `gorm:"foreignKey:InvoiceID" json:"charges"`
 }
 
 type SalesInvoiceCharge struct {
 	gorm.Model
-	ID        string `gorm:"primaryKey"`
-	InvoiceID string `gorm:"index"`
-	Label     string
-	Amount    float32
+	ID        string  `gorm:"primaryKey" json:"id"`
+	InvoiceID string  `gorm:"index" json:"invoice_id"`
+	Label     string  `json:"label"`
+	Amount    float32 `json:"amount"`
 }
 
 type SalesInvoiceItem struct {
 	gorm.Model
-	ID          string `gorm:"primaryKey"`
-	InvoiceID   string `gorm:"index"`
-	ProductID   string `gorm:"index"`
-	ProductName string
-	HSNCode     string
-	Quantity    float32
-	UnitPrice   float32
-	Discount    float32
-	TaxRate     float32
-	TaxAmount   float32
-	Amount      float32
-	Barcode     string
+	ID          string  `gorm:"primaryKey" json:"id"`
+	InvoiceID   string  `gorm:"index" json:"invoice_id"`
+	ProductID   string  `gorm:"index" json:"product_id"`
+	ProductName string  `json:"product_name"`
+	HSNCode     string  `json:"hsn_code"`
+	Quantity    float32 `json:"quantity"`
+	UnitPrice   float32 `json:"unit_price"`
+	Discount    float32 `json:"discount"`
+	TaxRate     float32 `json:"tax_rate"`
+	TaxAmount   float32 `json:"tax_amount"`
+	Amount      float32 `json:"amount"`
+	Barcode     string  `json:"barcode"`
 }
 
 type PurchaseInvoice struct {

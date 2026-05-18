@@ -1018,39 +1018,31 @@ func (s *ServerImpl) GetPosSessionsIdSummary(c *gin.Context, id string) {
 }
 
 func (s *ServerImpl) GetProducts(c *gin.Context, params GetProductsParams) {
-	var products []models.Product
-	query := s.db.Model(&models.Product{})
-
-	if params.Q != nil && *params.Q != "" {
-		q := "%" + *params.Q + "%"
-		query = query.Where("name LIKE ? OR sku LIKE ? OR item_code LIKE ? OR hsn_code LIKE ? OR barcode LIKE ?", q, q, q, q, q)
+	var q string
+	if params.Q != nil {
+		q = *params.Q
 	}
-
-	if params.CategoryId != nil && *params.CategoryId != "" {
-		query = query.Where("category_id = ?", *params.CategoryId)
+	var categoryID string
+	if params.CategoryId != nil {
+		categoryID = *params.CategoryId
 	}
-
-	if params.IsActive != nil {
-		query = query.Where("is_active = ?", *params.IsActive)
-	}
-
-	if params.LowStock != nil && *params.LowStock {
-		query = query.Where("stock_quantity <= low_stock_quantity AND low_stock_warning = ?", true)
-	}
-
-	var total int64
-	query.Count(&total)
-
-	page := 1
+	var page int
 	if params.Page != nil {
 		page = *params.Page
 	}
-	perPage := 20
+	if page <= 0 {
+		page = 1
+	}
+	var perPage int
 	if params.PerPage != nil {
 		perPage = *params.PerPage
 	}
+	if perPage <= 0 {
+		perPage = 20
+	}
 
-	if err := query.Offset((page - 1) * perPage).Limit(perPage).Find(&products).Error; err != nil {
+	products, total, err := s.itemsService.GetProducts(q, categoryID, params.IsActive, params.LowStock, page, perPage)
+	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -1080,16 +1072,68 @@ func (s *ServerImpl) PostProducts(c *gin.Context) {
 		product.SKU = "SKU-" + uuid.New().String()[:8]
 	}
 
-	if err := s.db.Create(&product).Error; err != nil {
+	created, err := s.itemsService.CreateProduct(&product)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(201, created)
+}
+
+func (s *ServerImpl) PostProductsBulkAction(c *gin.Context) {
+	var body struct {
+		Action string   `json:"action"`
+		Ids    []string `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.itemsService.BulkAction(body.Action, body.Ids); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(201, product)
+	c.JSON(200, gin.H{"status": "success", "message": "Action executed successfully"})
 }
 
 func (s *ServerImpl) GetProductsBulkExport(c *gin.Context, params GetProductsBulkExportParams) {
-	c.JSON(501, gin.H{"error": "Not Implemented"})
+	products, err := s.itemsService.BulkExport()
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=products_export.csv")
+	c.Header("Content-Type", "text/csv")
+
+	var builder strings.Builder
+	builder.WriteString("ID,Name,SKU,Item Code,Barcode,Product Type,Measuring Unit,Sale Price,Wholesale Price,Purchase Price,GST Rate,Stock Quantity,Status\n")
+	for _, p := range products {
+		status := "Inactive"
+		if p.IsActive {
+			status = "Active"
+		}
+		builder.WriteString(fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%s\n",
+			p.ID,
+			strings.ReplaceAll(p.Name, ",", " "),
+			strings.ReplaceAll(p.SKU, ",", " "),
+			strings.ReplaceAll(p.ItemCode, ",", " "),
+			strings.ReplaceAll(p.Barcode, ",", " "),
+			p.ProductType,
+			strings.ReplaceAll(p.MeasuringUnit, ",", " "),
+			p.SalePrice,
+			p.WholesalePrice,
+			p.PurchasePrice,
+			p.GSTRate,
+			p.StockQuantity,
+			status,
+		))
+	}
+
+	c.String(200, builder.String())
 }
 
 func (s *ServerImpl) PostProductsBulkImport(c *gin.Context) {
@@ -1097,35 +1141,36 @@ func (s *ServerImpl) PostProductsBulkImport(c *gin.Context) {
 }
 
 func (s *ServerImpl) DeleteProductsId(c *gin.Context, id string) {
-	if err := s.db.Model(&models.Product{}).Where("id = ?", id).Update("is_active", false).Error; err != nil {
+	if err := s.itemsService.DeleteProduct(id); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(200, gin.H{"message": "Product deactivated"})
+	c.JSON(200, gin.H{"message": "Product soft-deleted successfully"})
 }
 
 func (s *ServerImpl) GetProductsId(c *gin.Context, id string) {
-	c.JSON(501, gin.H{"error": "Not Implemented"})
+	product, err := s.itemsService.GetProductByID(id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "Product not found"})
+		return
+	}
+	c.JSON(200, product)
 }
 
 func (s *ServerImpl) PutProductsId(c *gin.Context, id string) {
 	var product models.Product
-	if err := s.db.First(&product, "id = ?", id).Error; err != nil {
-		c.JSON(404, gin.H{"error": "Product not found"})
-		return
-	}
-
 	if err := c.ShouldBindJSON(&product); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := s.db.Save(&product).Error; err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+	updated, err := s.itemsService.UpdateProduct(id, &product)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(200, product)
+	c.JSON(200, updated)
 }
 
 func (s *ServerImpl) PostProductsIdImage(c *gin.Context, id string) {
@@ -1680,6 +1725,7 @@ func (s *ServerImpl) GetReportsStockValuation(c *gin.Context, params GetReportsS
 }
 
 func (s *ServerImpl) GetSalesInvoices(c *gin.Context, params GetSalesInvoicesParams) {
+	storeID := s.getStoreID(c)
 	var fromDateStr, toDateStr *string
 	if params.FromDate != nil {
 		s := params.FromDate.String()
@@ -1690,7 +1736,7 @@ func (s *ServerImpl) GetSalesInvoices(c *gin.Context, params GetSalesInvoicesPar
 		toDateStr = &s
 	}
 
-	invoices, total, stats, err := s.salesService.GetInvoices(sales.GetInvoicesParams{
+	invoices, total, stats, err := s.salesService.GetInvoices(storeID, sales.GetInvoicesParams{
 		Status:     params.Status,
 		CustomerId: params.CustomerId,
 		FromDate:   fromDateStr,
@@ -1727,6 +1773,7 @@ func (s *ServerImpl) GetSalesInvoices(c *gin.Context, params GetSalesInvoicesPar
 }
 
 func (s *ServerImpl) PostSalesInvoices(c *gin.Context) {
+	storeID := s.getStoreID(c)
 	var body struct {
 		models.SalesInvoice
 		Items   []models.SalesInvoiceItem   `json:"items"`
@@ -1737,7 +1784,7 @@ func (s *ServerImpl) PostSalesInvoices(c *gin.Context) {
 		return
 	}
 
-	invoice, err := s.salesService.CreateInvoice(&body.SalesInvoice, body.Items, body.Charges)
+	invoice, err := s.salesService.CreateInvoice(storeID, &body.SalesInvoice, body.Items, body.Charges)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -1751,7 +1798,8 @@ func (s *ServerImpl) PostSalesInvoicesCalculateTax(c *gin.Context) {
 }
 
 func (s *ServerImpl) GetSalesInvoicesId(c *gin.Context, id string) {
-	invoice, err := s.salesService.GetInvoiceByID(id)
+	storeID := s.getStoreID(c)
+	invoice, err := s.salesService.GetInvoiceByID(storeID, id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Invoice not found"})
 		return
@@ -1760,6 +1808,7 @@ func (s *ServerImpl) GetSalesInvoicesId(c *gin.Context, id string) {
 }
 
 func (s *ServerImpl) PutSalesInvoicesId(c *gin.Context, id string) {
+	storeID := s.getStoreID(c)
 	var body struct {
 		models.SalesInvoice
 		Items   []models.SalesInvoiceItem   `json:"items"`
@@ -1770,7 +1819,7 @@ func (s *ServerImpl) PutSalesInvoicesId(c *gin.Context, id string) {
 		return
 	}
 
-	invoice, err := s.salesService.UpdateInvoice(id, &body.SalesInvoice, body.Items, body.Charges)
+	invoice, err := s.salesService.UpdateInvoice(storeID, id, &body.SalesInvoice, body.Items, body.Charges)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -1780,11 +1829,83 @@ func (s *ServerImpl) PutSalesInvoicesId(c *gin.Context, id string) {
 }
 
 func (s *ServerImpl) DeleteSalesInvoicesId(c *gin.Context, id string) {
-	if err := s.salesService.CancelInvoice(id); err != nil {
+	storeID := s.getStoreID(c)
+	if err := s.salesService.DeleteInvoice(storeID, id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Invoice deleted successfully"})
+}
+
+func (s *ServerImpl) PostSalesInvoicesIdCancel(c *gin.Context) {
+	id := c.Param("id")
+	storeID := s.getStoreID(c)
+	if err := s.salesService.CancelInvoice(storeID, id); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(200, gin.H{"message": "Invoice cancelled successfully"})
+}
+
+func (s *ServerImpl) PostSalesInvoicesBulkAction(c *gin.Context) {
+	storeID := s.getStoreID(c)
+	var body struct {
+		Action string   `json:"action"`
+		IDs    []string `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	if body.Action == "cancel" {
+		if err := s.salesService.BulkCancelInvoices(storeID, body.IDs); err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+	} else if body.Action == "delete" {
+		if err := s.salesService.BulkDeleteInvoices(storeID, body.IDs); err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		c.JSON(400, gin.H{"error": "Invalid action. Supported: cancel, delete"})
+		return
+	}
+
+	c.JSON(200, gin.H{"status": "success", "message": "Bulk action executed successfully"})
+}
+
+func (s *ServerImpl) GetSalesInvoicesBulkExport(c *gin.Context) {
+	storeID := s.getStoreID(c)
+	invoices, err := s.salesService.BulkExport(storeID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=sales_invoices_export.csv")
+	c.Header("Content-Type", "text/csv")
+
+	var builder strings.Builder
+	builder.WriteString("ID,Invoice No,Party Name,Party Mobile,Invoice Date,Due Date,Status,Grand Total,Paid Amount,Balance Amount,Created At\n")
+	for _, inv := range invoices {
+		builder.WriteString(fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%f,%f,%f,%s\n",
+			inv.ID,
+			strings.ReplaceAll(inv.InvoiceNo, ",", " "),
+			strings.ReplaceAll(inv.PartyName, ",", " "),
+			strings.ReplaceAll(inv.PartyMobile, ",", " "),
+			inv.InvoiceDate,
+			inv.DueDate,
+			inv.Status,
+			inv.GrandTotal,
+			inv.PaidAmount,
+			inv.BalanceAmount,
+			inv.CreatedAt.Format(time.RFC3339),
+		))
+	}
+
+	c.String(200, builder.String())
 }
 
 func (s *ServerImpl) PostSalesInvoicesIdCreditNote(c *gin.Context, id string) {

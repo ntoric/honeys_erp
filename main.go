@@ -109,9 +109,13 @@ func main() {
 		protected.PUT("/sales/returns/:id", srv.PutSalesReturnsId)
 		protected.DELETE("/sales/returns/:id", srv.DeleteSalesReturnsId)
 		protected.POST("/sales/returns/bulk-action", srv.PostSalesReturnsBulkAction)
+		protected.POST("/sales/invoices/bulk-action", srv.PostSalesInvoicesBulkAction)
+		protected.GET("/sales/invoices/bulk-export", srv.GetSalesInvoicesBulkExport)
+		protected.POST("/sales/invoices/:id/cancel", srv.PostSalesInvoicesIdCancel)
 		protected.POST("/expenses/bulk-action", srv.PostExpensesBulkAction)
 		protected.POST("/categories/bulk-action", srv.PostCategoriesBulkAction)
 		protected.GET("/categories/bulk-export", srv.GetCategoriesBulkExport)
+		protected.POST("/products/bulk-action", srv.PostProductsBulkAction)
 		
 		// Cash & Bank Routes
 		protected.GET("/accounting/cash-bank/accounts", srv.GetAccountingCashBankAccounts)

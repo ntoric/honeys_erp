@@ -21,18 +21,22 @@ import SaveIcon from '@mui/icons-material/Save';
 import { PaymentsService, PartiesService, Party } from '@/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import PartySelect from '@/components/common/PartySelect';
 
 export default function CreatePaymentInPage() {
   const theme = useTheme();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
+  const partyId = searchParams.get('party_id') || '';
+  const amountParam = parseFloat(searchParams.get('amount') || '0');
+
   const [formData, setFormData] = React.useState({
-    party_id: '',
-    amount: 0,
+    party_id: partyId,
+    amount: amountParam,
     discount: 0,
     payment_date: new Date().toISOString().split('T')[0],
     mode: 'cash',
@@ -42,6 +46,25 @@ export default function CreatePaymentInPage() {
   });
 
   const [selectedParty, setSelectedParty] = React.useState<Party | null>(null);
+
+  const { data: partiesData } = useQuery({
+    queryKey: ['parties-search', 'customer'],
+    queryFn: () => PartiesService.getParties('customer'),
+  });
+
+  React.useEffect(() => {
+    if (partiesData?.data && partyId && !selectedParty) {
+      const match = partiesData.data.find(p => p.id === partyId);
+      if (match) {
+        setSelectedParty(match);
+        setFormData(prev => ({
+          ...prev,
+          party_id: match.id || '',
+          amount: prev.amount || amountParam || 0
+        }));
+      }
+    }
+  }, [partiesData, partyId, amountParam, selectedParty]);
 
   const mutation = useMutation({
     mutationFn: (data: any) => PaymentsService.postPayments({

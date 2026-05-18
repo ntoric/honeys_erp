@@ -249,6 +249,8 @@ export default function InvoiceDetail() {
                 <Button 
                   variant="contained" 
                   fullWidth 
+                  component={Link}
+                  href={`/sales/payments/create?party_id=${invoice.party_id || invoice.partyId || ''}&amount=${invoice.balance_amount || invoice.balanceAmount || 0}`}
                   sx={{ mt: 2, borderRadius: '12px', fontWeight: 800 }}
                   disabled={(invoice.balance_amount || invoice.balanceAmount || 0) === 0}
                 >

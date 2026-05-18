@@ -30,7 +30,8 @@ import {
   Checkbox,
   Card,
   CardContent,
-  CircularProgress
+  CircularProgress,
+  createFilterOptions
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -46,6 +47,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import PartySelect from '@/components/common/PartySelect';
+import QuickAddProductDialog from '@/components/products/QuickAddProductDialog';
+
+const filter = createFilterOptions<Product>();
 
 export default function EditInvoicePage() {
   const { id } = useParams();
@@ -72,6 +76,7 @@ export default function EditInvoicePage() {
   const [itemSearch, setItemSearch] = React.useState('');
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
   const [itemQty, setItemQty] = React.useState(1);
+  const [isProductDialogOpen, setIsProductDialogOpen] = React.useState(false);
 
   // Fetch Existing Data
   const { isLoading: isLoadingInvoice } = useQuery({
@@ -79,8 +84,8 @@ export default function EditInvoicePage() {
     queryFn: async () => {
       const data = await SalesService.getSalesInvoices1(id as string) as any;
       
-      setInvoiceNo(data.invoice_no || data.invoiceNo);
-      setInvoiceDate(data.invoice_date || data.invoiceDate);
+      setInvoiceNo(data.invoice_no || data.invoiceNo || '');
+      setInvoiceDate(data.invoice_date || data.invoiceDate || '');
       setPaymentTerms(data.payment_terms || data.paymentTerms || 0);
       setItems(data.items || data.Items || []);
       setCharges(data.charges || data.Charges || data.additionalCharges || []);
@@ -89,11 +94,15 @@ export default function EditInvoicePage() {
       setPaymentMethod(data.payment_method || data.paymentMethod || 'UPI');
       setNotes(data.notes || '');
       setStatus(data.status || '');
-      setParty({ 
-        id: data.party_id || data.partyId, 
-        name: data.party_name || data.partyName || data.customer_name, 
-        mobile: data.party_mobile || data.partyMobile || data.customer_phone 
-      } as any);
+      if (data.party_id || data.partyId) {
+        setParty({ 
+          id: data.party_id || data.partyId || '', 
+          name: data.party_name || data.partyName || data.customer_name || '', 
+          mobile: data.party_mobile || data.partyMobile || data.customer_phone || '' 
+        } as any);
+      } else {
+        setParty(null);
+      }
       
       return data;
     }
@@ -148,7 +157,7 @@ export default function EditInvoicePage() {
     const newItem = {
       product_id: selectedProduct.id,
       product_name: selectedProduct.name,
-      hsn_code: (selectedProduct as any).hsn_sac_code || '',
+      hsn_code: selectedProduct.hsn_code || (selectedProduct as any).hsn_sac_code || '',
       quantity: itemQty,
       unit_price: unitPrice,
       discount: 0,
@@ -294,8 +303,8 @@ export default function EditInvoicePage() {
             <Box sx={{ p: 2, px: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Items</Typography>
               <Stack direction="row" spacing={1}>
-                <Button variant="outlined" size="small" startIcon={<QrCodeScannerIcon />} sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600 }}>Scan</Button>
-                <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={() => setIsItemDialogOpen(true)} sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700 }}>Add Item</Button>
+                <Button variant="outlined" size="small" startIcon={<QrCodeScannerIcon />} sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, whiteSpace: 'nowrap', px: 2.5, py: 1 }}>Scan</Button>
+                <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={() => setIsItemDialogOpen(true)} sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap', px: 2.5, py: 1 }}>Add Item</Button>
               </Stack>
             </Box>
             <TableContainer>
@@ -429,9 +438,61 @@ export default function EditInvoicePage() {
           <Stack spacing={3} sx={{ mt: 2 }}>
             <Autocomplete
               options={productsData?.data || []}
-              getOptionLabel={(option) => `${option.name} (${option.sku})`}
+              getOptionLabel={(option) => {
+                if (typeof option === 'string') {
+                  return option;
+                }
+                if (option.id === 'add-new-product') {
+                  return option.name || '';
+                }
+                return `${option.name} (${option.sku})`;
+              }}
+              filterOptions={(options, params) => {
+                const filtered = filter(options, params);
+                const { inputValue } = params;
+
+                const isExisting = options.some((option) => inputValue.toLowerCase() === option.name?.toLowerCase());
+                if (inputValue !== '' && !isExisting) {
+                  filtered.push({
+                    id: 'add-new-product',
+                    name: `Add "${inputValue}"`,
+                  } as any);
+                }
+
+                filtered.push({
+                  id: 'add-new-product',
+                  name: '+ Create New Item',
+                } as any);
+
+                return filtered;
+              }}
               onInputChange={(_, value) => setItemSearch(value)}
-              onChange={(_, newValue) => setSelectedProduct(newValue)}
+              onChange={(_, newValue) => {
+                if (newValue && newValue.id === 'add-new-product') {
+                  setIsProductDialogOpen(true);
+                } else {
+                  setSelectedProduct(newValue);
+                }
+              }}
+              renderOption={(props, option: any) => {
+                const { key, ...restProps } = props as any;
+                if (option.id === 'add-new-product') {
+                  return (
+                    <Box component="li" key="add-new-product" {...restProps} sx={{ color: 'primary.main', fontWeight: 700 }}>
+                      <AddCircleIcon sx={{ mr: 1, fontSize: 20 }} />
+                      {option.name}
+                    </Box>
+                  );
+                }
+                return (
+                  <Box component="li" key={option.id} {...restProps}>
+                    <Box>
+                      <Typography sx={{ fontWeight: 600 }}>{option.name}</Typography>
+                      <Typography variant="caption" color="text.secondary">SKU: {option.sku} | Price: ₹{option.sale_price} | Tax: {option.gst_rate}%</Typography>
+                    </Box>
+                  </Box>
+                );
+              }}
               renderInput={(params) => <TextField {...params} label="Search Product" fullWidth />}
             />
             <TextField 
@@ -448,6 +509,14 @@ export default function EditInvoicePage() {
           <Button variant="contained" onClick={handleAddItem} disabled={!selectedProduct} sx={{ borderRadius: '10px', px: 4, fontWeight: 800 }}>Add to Bill</Button>
         </DialogActions>
       </Dialog>
+
+      <QuickAddProductDialog
+        open={isProductDialogOpen}
+        onClose={() => setIsProductDialogOpen(false)}
+        onSuccess={(newProduct) => {
+          setSelectedProduct(newProduct);
+        }}
+      />
     </Box>
   );
 }

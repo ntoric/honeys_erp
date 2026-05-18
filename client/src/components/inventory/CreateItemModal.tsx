@@ -44,6 +44,7 @@ export default function CreateItemModal({
   initialData,
 }: CreateItemModalProps) {
   const [categories, setCategories] = React.useState<Category[]>([]);
+  const [hasExpiry, setHasExpiry] = React.useState(false);
   const [formData, setFormData] = React.useState<Product>({
     product_type: 'Product',
     name: '',
@@ -64,48 +65,51 @@ export default function CreateItemModal({
     discount_on_sale: 0,
     is_draft: false,
   });
-
-  React.useEffect(() => {
-    if (open) {
-      fetchCategories();
-      if (initialData) {
-        setFormData({
-          ...initialData,
-          wholesale_price: (initialData as any).wholesale_price || (initialData as any).wholesalePrice || 0
-        });
-      } else {
-        setFormData({
-          product_type: 'Product',
-          name: '',
-          category_id: '',
-          enable_batching: false,
-          item_code: '',
-          hsn_code: '',
-          measuring_unit: 'Pcs',
-          stock_quantity: 0,
-          low_stock_warning: true,
-          low_stock_quantity: 10,
-          sale_price: 0,
-          wholesale_price: 0,
-          sale_price_tax_inclusive: true,
-          purchase_price: 0,
-          purchase_price_tax_inclusive: true,
-          gst_rate: 18,
-          discount_on_sale: 0,
-          is_draft: false,
-        });
-      }
-    }
-  }, [open, initialData]);
-
-  const fetchCategories = async () => {
+  const fetchCategories = React.useCallback(async () => {
     try {
       const response = await CategoriesService.getCategories();
       setCategories(response as any);
     } catch (error) {
       console.error('Failed to fetch categories', error);
     }
-  };
+  }, []);
+
+  React.useEffect(() => {
+    if (open) {
+      Promise.resolve().then(() => {
+        fetchCategories();
+        if (initialData) {
+          setFormData({
+            ...initialData,
+            wholesale_price: (initialData as any).wholesale_price || (initialData as any).wholesalePrice || 0
+          });
+          setHasExpiry(!!initialData.expiry_date);
+        } else {
+          setFormData({
+            product_type: 'Product',
+            name: '',
+            category_id: '',
+            enable_batching: false,
+            item_code: '',
+            hsn_code: '',
+            measuring_unit: 'Pcs',
+            stock_quantity: 0,
+            low_stock_warning: true,
+            low_stock_quantity: 10,
+            sale_price: 0,
+            wholesale_price: 0,
+            sale_price_tax_inclusive: true,
+            purchase_price: 0,
+            purchase_price_tax_inclusive: true,
+            gst_rate: 18,
+            discount_on_sale: 0,
+            is_draft: false,
+          });
+          setHasExpiry(false);
+        }
+      });
+    }
+  }, [open, initialData, fetchCategories]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -133,7 +137,7 @@ export default function CreateItemModal({
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
-        <Typography variant="h6" sx={{ fontWeight: 800 }}>
+        <Typography component="span" variant="h6" sx={{ fontWeight: 800 }}>
           {initialData ? 'Edit Item' : 'Create New Item'}
         </Typography>
         <IconButton onClick={onClose} size="small">
@@ -293,6 +297,37 @@ export default function CreateItemModal({
                   name="low_stock_quantity"
                   value={formData.low_stock_quantity}
                   onChange={handleChange}
+                />
+              </Grid>
+            )}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <FormControlLabel
+                control={
+                  <Switch 
+                    name="has_expiry" 
+                    checked={hasExpiry} 
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setHasExpiry(checked);
+                      if (!checked) {
+                        setFormData(prev => ({ ...prev, expiry_date: undefined }));
+                      }
+                    }} 
+                  />
+                }
+                label={<Typography sx={{ fontWeight: 600 }}>Has Expiry</Typography>}
+              />
+            </Grid>
+            {hasExpiry && (
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  type="date"
+                  label="Expiry Date"
+                  name="expiry_date"
+                  value={formData.expiry_date || ''}
+                  onChange={handleChange}
+                  slotProps={{ inputLabel: { shrink: true } }}
                 />
               </Grid>
             )}

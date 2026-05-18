@@ -3,17 +3,24 @@ package sales
 import (
 	"fmt"
 	"log"
+	"os"
+	"strings"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"pos-api/internal/models"
 )
 
 type SalesService interface {
-	GetInvoices(params GetInvoicesParams) ([]models.SalesInvoice, int64, interface{}, error)
-	GetInvoiceByID(id string) (*models.SalesInvoice, error)
-	CreateInvoice(invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error)
-	UpdateInvoice(id string, invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error)
-	CancelInvoice(id string) error
+	GetInvoices(storeID string, params GetInvoicesParams) ([]models.SalesInvoice, int64, interface{}, error)
+	GetInvoiceByID(storeID string, id string) (*models.SalesInvoice, error)
+	CreateInvoice(storeID string, invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error)
+	UpdateInvoice(storeID string, id string, invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error)
+	CancelInvoice(storeID string, id string) error
+	DeleteInvoice(storeID string, id string) error
+	BulkCancelInvoices(storeID string, ids []string) error
+	BulkDeleteInvoices(storeID string, ids []string) error
+	BulkExport(storeID string) ([]models.SalesInvoice, error)
 }
 
 type GetInvoicesParams struct {
@@ -34,9 +41,9 @@ func NewSalesService(db *gorm.DB) SalesService {
 	return &salesService{db: db}
 }
 
-func (s *salesService) GetInvoices(params GetInvoicesParams) ([]models.SalesInvoice, int64, interface{}, error) {
+func (s *salesService) GetInvoices(storeID string, params GetInvoicesParams) ([]models.SalesInvoice, int64, interface{}, error) {
 	var invoices []models.SalesInvoice
-	query := s.db.Preload("Items").Preload("Charges").Model(&models.SalesInvoice{})
+	query := s.db.Preload("Items").Preload("Charges").Model(&models.SalesInvoice{}).Where("store_id = ?", storeID)
 
 	if params.Status != nil && *params.Status != "" {
 		query = query.Where("status = ?", *params.Status)
@@ -80,33 +87,52 @@ func (s *salesService) GetInvoices(params GetInvoicesParams) ([]models.SalesInvo
 		CancelledCount int64   `json:"cancelled_count"`
 	}
 
-	s.db.Model(&models.SalesInvoice{}).Where("status != ?", "cancelled").Select("SUM(grand_total)").Scan(&stats.TotalSales)
-	s.db.Model(&models.SalesInvoice{}).Where("status != ?", "cancelled").Select("SUM(paid_amount)").Scan(&stats.PaidAmount)
-	s.db.Model(&models.SalesInvoice{}).Where("status != ?", "cancelled").Select("SUM(balance_amount)").Scan(&stats.UnpaidAmount)
-	s.db.Model(&models.SalesInvoice{}).Where("status = ?", "cancelled").Count(&stats.CancelledCount)
+	s.db.Model(&models.SalesInvoice{}).Where("store_id = ? AND status != ?", storeID, "cancelled").Select("SUM(grand_total)").Scan(&stats.TotalSales)
+	s.db.Model(&models.SalesInvoice{}).Where("store_id = ? AND status != ?", storeID, "cancelled").Select("SUM(paid_amount)").Scan(&stats.PaidAmount)
+	s.db.Model(&models.SalesInvoice{}).Where("store_id = ? AND status != ?", storeID, "cancelled").Select("SUM(balance_amount)").Scan(&stats.UnpaidAmount)
+	s.db.Model(&models.SalesInvoice{}).Where("store_id = ? AND status = ?", storeID, "cancelled").Count(&stats.CancelledCount)
 
 	return invoices, total, stats, nil
 }
 
-func (s *salesService) GetInvoiceByID(id string) (*models.SalesInvoice, error) {
+func (s *salesService) GetInvoiceByID(storeID string, id string) (*models.SalesInvoice, error) {
 	var invoice models.SalesInvoice
-	if err := s.db.Preload("Items").Preload("Charges").First(&invoice, "id = ?", id).Error; err != nil {
+	if err := s.db.Preload("Items").Preload("Charges").First(&invoice, "id = ? AND store_id = ?", id, storeID).Error; err != nil {
 		log.Printf("[SalesService] Error fetching invoice %s: %v", id, err)
 		return nil, err
 	}
 	return &invoice, nil
 }
 
-func (s *salesService) CreateInvoice(invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error) {
+func (s *salesService) CreateInvoice(storeID string, invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error) {
 	log.Printf("[SalesService] Creating new invoice for party: %s", invoice.PartyName)
 	if invoice.ID == "" {
 		invoice.ID = uuid.New().String()
 	}
 
+	invoice.StoreID = storeID
+
 	if invoice.InvoiceNo == "" {
 		var count int64
-		s.db.Model(&models.SalesInvoice{}).Count(&count)
+		s.db.Model(&models.SalesInvoice{}).Where("store_id = ?", storeID).Count(&count)
 		invoice.InvoiceNo = fmt.Sprintf("INV-%04d", count+1)
+	}
+
+	// Unscoped soft-deleted reuse check
+	var existingSoftDeleted models.SalesInvoice
+	if err := s.db.Unscoped().Where("store_id = ? AND invoice_no = ? AND deleted_at IS NOT NULL", storeID, invoice.InvoiceNo).First(&existingSoftDeleted).Error; err == nil {
+		envVal := strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_SOFT_DELETED_REUSE")))
+		allowReuse := envVal == "true" || envVal == "t" || envVal == "1" || envVal == "yes"
+		if allowReuse {
+			log.Printf("[SalesService] ALLOW_SOFT_DELETED_REUSE is enabled. Found soft-deleted invoice with same InvoiceNo %s. Hard deleting to resolve unique constraint conflict.", invoice.InvoiceNo)
+			if err := s.db.Unscoped().Delete(&existingSoftDeleted).Error; err != nil {
+				log.Printf("[SalesService] Error purging soft-deleted record: %v", err)
+				return nil, err
+			}
+		} else {
+			log.Printf("[SalesService] ALLOW_SOFT_DELETED_REUSE is disabled. Rejecting creation due to conflict with soft-deleted invoice: %s", invoice.InvoiceNo)
+			return nil, fmt.Errorf("An Invoice with these details has already been deleted, please use different details to create the invoice")
+		}
 	}
 
 	// Calculate totals
@@ -176,7 +202,7 @@ func (s *salesService) CreateInvoice(invoice *models.SalesInvoice, items []model
 
 			if invoice.PartyID != "" {
 				log.Printf("[SalesService] Updating balance for party %s by +%f", invoice.PartyID, invoice.BalanceAmount)
-				if err := tx.Model(&models.Party{}).Where("id = ?", invoice.PartyID).
+				if err := tx.Model(&models.Party{}).Where("id = ? AND store_id = ?", invoice.PartyID, storeID).
 					UpdateColumn("balance", gorm.Expr("balance + ?", invoice.BalanceAmount)).Error; err != nil {
 					return err
 				}
@@ -194,15 +220,41 @@ func (s *salesService) CreateInvoice(invoice *models.SalesInvoice, items []model
 	return invoice, nil
 }
 
-func (s *salesService) UpdateInvoice(id string, invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error) {
+func (s *salesService) UpdateInvoice(storeID string, id string, invoice *models.SalesInvoice, items []models.SalesInvoiceItem, charges []models.SalesInvoiceCharge) (*models.SalesInvoice, error) {
 	log.Printf("[SalesService] Updating invoice: %s", id)
 	var oldInvoice models.SalesInvoice
-	if err := s.db.Preload("Items").Preload("Charges").First(&oldInvoice, "id = ?", id).Error; err != nil {
+	if err := s.db.Preload("Items").Preload("Charges").First(&oldInvoice, "id = ? AND store_id = ?", id, storeID).Error; err != nil {
 		log.Printf("[SalesService] Error fetching old invoice %s: %v", id, err)
 		return nil, err
 	}
 
 	invoice.ID = id
+	invoice.StoreID = storeID
+
+	if invoice.InvoiceNo != "" && invoice.InvoiceNo != oldInvoice.InvoiceNo {
+		// Active check
+		var activeExisting models.SalesInvoice
+		if err := s.db.Where("store_id = ? AND invoice_no = ? AND id != ?", storeID, invoice.InvoiceNo, id).First(&activeExisting).Error; err == nil {
+			return nil, fmt.Errorf("an invoice with this number already exists")
+		}
+
+		// Unscoped soft-deleted reuse check
+		var existingSoftDeleted models.SalesInvoice
+		if err := s.db.Unscoped().Where("store_id = ? AND invoice_no = ? AND deleted_at IS NOT NULL", storeID, invoice.InvoiceNo).First(&existingSoftDeleted).Error; err == nil {
+			envVal := strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_SOFT_DELETED_REUSE")))
+			allowReuse := envVal == "true" || envVal == "t" || envVal == "1" || envVal == "yes"
+			if allowReuse {
+				log.Printf("[SalesService] ALLOW_SOFT_DELETED_REUSE is enabled. Found soft-deleted invoice with same InvoiceNo %s during update. Hard deleting.", invoice.InvoiceNo)
+				if err := s.db.Unscoped().Delete(&existingSoftDeleted).Error; err != nil {
+					log.Printf("[SalesService] Error purging soft-deleted record during update: %v", err)
+					return nil, err
+				}
+			} else {
+				log.Printf("[SalesService] ALLOW_SOFT_DELETED_REUSE is disabled. Rejecting update due to conflict with soft-deleted invoice: %s", invoice.InvoiceNo)
+				return nil, fmt.Errorf("An Invoice with these details has already been deleted, please use different details to create the invoice")
+			}
+		}
+	}
 
 	// Calculate totals
 	var subtotal, totalTax, totalDiscount float32
@@ -254,7 +306,7 @@ func (s *salesService) UpdateInvoice(id string, invoice *models.SalesInvoice, it
 				}
 			}
 			if oldInvoice.PartyID != "" {
-				if err := tx.Model(&models.Party{}).Where("id = ?", oldInvoice.PartyID).
+				if err := tx.Model(&models.Party{}).Where("id = ? AND store_id = ?", oldInvoice.PartyID, storeID).
 					UpdateColumn("balance", gorm.Expr("balance - ?", oldInvoice.BalanceAmount)).Error; err != nil {
 					return err
 				}
@@ -293,7 +345,7 @@ func (s *salesService) UpdateInvoice(id string, invoice *models.SalesInvoice, it
 				}
 			}
 			if invoice.PartyID != "" {
-				if err := tx.Model(&models.Party{}).Where("id = ?", invoice.PartyID).
+				if err := tx.Model(&models.Party{}).Where("id = ? AND store_id = ?", invoice.PartyID, storeID).
 					UpdateColumn("balance", gorm.Expr("balance + ?", invoice.BalanceAmount)).Error; err != nil {
 					return err
 				}
@@ -311,10 +363,10 @@ func (s *salesService) UpdateInvoice(id string, invoice *models.SalesInvoice, it
 	return invoice, nil
 }
 
-func (s *salesService) CancelInvoice(id string) error {
+func (s *salesService) CancelInvoice(storeID string, id string) error {
 	log.Printf("[SalesService] Cancelling invoice: %s", id)
 	var invoice models.SalesInvoice
-	if err := s.db.Preload("Items").First(&invoice, "id = ?", id).Error; err != nil {
+	if err := s.db.Preload("Items").First(&invoice, "id = ? AND store_id = ?", id, storeID).Error; err != nil {
 		log.Printf("[SalesService] Error fetching invoice %s for cancellation: %v", id, err)
 		return err
 	}
@@ -339,7 +391,7 @@ func (s *salesService) CancelInvoice(id string) error {
 			}
 
 			if invoice.PartyID != "" {
-				if err := tx.Model(&models.Party{}).Where("id = ?", invoice.PartyID).
+				if err := tx.Model(&models.Party{}).Where("id = ? AND store_id = ?", invoice.PartyID, storeID).
 					UpdateColumn("balance", gorm.Expr("balance - ?", invoice.BalanceAmount)).Error; err != nil {
 					return err
 				}
@@ -355,4 +407,84 @@ func (s *salesService) CancelInvoice(id string) error {
 
 	log.Printf("[SalesService] Successfully cancelled invoice: %s", invoice.InvoiceNo)
 	return nil
+}
+
+func (s *salesService) DeleteInvoice(storeID string, id string) error {
+	log.Printf("[SalesService] Deleting invoice: %s", id)
+	var invoice models.SalesInvoice
+	if err := s.db.Preload("Items").First(&invoice, "id = ? AND store_id = ?", id, storeID).Error; err != nil {
+		log.Printf("[SalesService] Error fetching invoice %s for deletion: %v", id, err)
+		return err
+	}
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if !invoice.IsDraft && invoice.Status != "cancelled" {
+			for _, item := range invoice.Items {
+				if item.ProductID != "" {
+					if err := tx.Model(&models.Product{}).Where("id = ?", item.ProductID).
+						UpdateColumn("stock_quantity", gorm.Expr("stock_quantity + ?", item.Quantity)).Error; err != nil {
+						return err
+					}
+				}
+			}
+
+			if invoice.PartyID != "" {
+				if err := tx.Model(&models.Party{}).Where("id = ? AND store_id = ?", invoice.PartyID, storeID).
+					UpdateColumn("balance", gorm.Expr("balance - ?", invoice.BalanceAmount)).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		if err := tx.Where("invoice_id = ?", id).Delete(&models.SalesInvoiceItem{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("invoice_id = ?", id).Delete(&models.SalesInvoiceCharge{}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Delete(&invoice).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("[SalesService] Error during deletion transaction for invoice %s: %v", id, err)
+		return err
+	}
+
+	log.Printf("[SalesService] Successfully deleted invoice: %s", invoice.InvoiceNo)
+	return nil
+}
+
+func (s *salesService) BulkCancelInvoices(storeID string, ids []string) error {
+	log.Printf("[SalesService] Bulk cancelling %d invoices", len(ids))
+	for _, id := range ids {
+		if err := s.CancelInvoice(storeID, id); err != nil {
+			log.Printf("[SalesService] Error bulk cancelling invoice %s: %v", id, err)
+		}
+	}
+	return nil
+}
+
+func (s *salesService) BulkDeleteInvoices(storeID string, ids []string) error {
+	log.Printf("[SalesService] Bulk deleting %d invoices", len(ids))
+	for _, id := range ids {
+		if err := s.DeleteInvoice(storeID, id); err != nil {
+			log.Printf("[SalesService] Error bulk deleting invoice %s: %v", id, err)
+		}
+	}
+	return nil
+}
+
+func (s *salesService) BulkExport(storeID string) ([]models.SalesInvoice, error) {
+	log.Printf("[SalesService] Bulk exporting invoices for store %s", storeID)
+	var invoices []models.SalesInvoice
+	if err := s.db.Preload("Items").Preload("Charges").Where("store_id = ?", storeID).Order("created_at desc").Find(&invoices).Error; err != nil {
+		log.Printf("[SalesService] Error fetching invoices for export: %v", err)
+		return nil, err
+	}
+	return invoices, nil
 }

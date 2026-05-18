@@ -69,12 +69,13 @@ export default function PartySelect({
               id: 'add-new-party',
               name: `Add "${inputValue}"`,
             } as any);
-          } else if (options.length === 0) {
-            filtered.push({
-              id: 'add-new-party',
-              name: 'Add Party',
-            } as any);
           }
+
+          // Always append a permanent "+ Create New Party" option at the end of the list
+          filtered.push({
+            id: 'add-new-party',
+            name: '+ Create New Party',
+          } as any);
 
           return filtered;
         }}
