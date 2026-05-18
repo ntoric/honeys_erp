@@ -17,15 +17,13 @@ import {
   Chip,
   IconButton,
 } from '@mui/material';
-import {
-  CheckCircle,
-  ErrorOutline,
-  Code,
-  InfoOutlined,
-  PlayArrow,
-  Assignment,
-  VerifiedUser,
-} from '@mui/icons-material';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import ErrorOutlined from '@mui/icons-material/ErrorOutlined';
+import Code from '@mui/icons-material/Code';
+import InfoOutlined from '@mui/icons-material/InfoOutlined';
+import PlayArrow from '@mui/icons-material/PlayArrow';
+import Assignment from '@mui/icons-material/Assignment';
+import VerifiedUser from '@mui/icons-material/VerifiedUser';
 import { toast } from 'sonner';
 import { Validators, validateForm } from '@/lib/validators';
 
@@ -213,7 +211,7 @@ export default function ValidatorsDemoPage() {
 
         <Grid container spacing={4}>
           {/* Left Column - Interactive Form */}
-          <Grid item xs={12} md={7}>
+          <Grid size={{ xs: 12, md: 7 }}>
             <Card sx={{ 
               borderRadius: '24px', 
               boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.07)', 
@@ -261,7 +259,7 @@ export default function ValidatorsDemoPage() {
                   <Stack spacing={3.5}>
                     {/* Basic Grid */}
                     <Grid container spacing={3.5}>
-                      <Grid item xs={12} sm={6}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
                         <TextField
                           name="username"
                           label="Username"
@@ -278,7 +276,7 @@ export default function ValidatorsDemoPage() {
                           }}
                         />
                       </Grid>
-                      <Grid item xs={12} sm={6}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
                         <TextField
                           name="email"
                           label="Email Address"
@@ -293,7 +291,7 @@ export default function ValidatorsDemoPage() {
                     </Grid>
 
                     <Grid container spacing={3.5}>
-                      <Grid item xs={12} sm={6}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
                         <TextField
                           name="phone"
                           label="Phone Number"
@@ -305,7 +303,7 @@ export default function ValidatorsDemoPage() {
                           placeholder="e.g. +919876543210"
                         />
                       </Grid>
-                      <Grid item xs={12} sm={6}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
                         <TextField
                           name="website"
                           label="Website URL"
@@ -320,7 +318,7 @@ export default function ValidatorsDemoPage() {
                     </Grid>
 
                     <Grid container spacing={3.5}>
-                      <Grid item xs={12} sm={6}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
                         <TextField
                           name="dob"
                           label="Date of Birth"
@@ -332,7 +330,7 @@ export default function ValidatorsDemoPage() {
                           placeholder="YYYY-MM-DD"
                         />
                       </Grid>
-                      <Grid item xs={12} sm={6}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
                         <TextField
                           name="age"
                           label="Age"
@@ -398,7 +396,7 @@ export default function ValidatorsDemoPage() {
           </Grid>
 
           {/* Right Column - Rules checklist & console */}
-          <Grid item xs={12} md={5}>
+          <Grid size={{ xs: 12, md: 5 }}>
             <Stack spacing={4}>
               {/* Validation Monitor */}
               <Card sx={{ 
@@ -495,11 +493,11 @@ interface RuleItemProps {
 
 function RuleItem({ label, passed }: RuleItemProps) {
   return (
-    <Stack direction="row" spacing={1} alignItems="center">
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
       {passed ? (
         <CheckCircle sx={{ color: '#48d1cc', fontSize: '1rem' }} />
       ) : (
-        <ErrorOutline sx={{ color: '#ff6b6b', fontSize: '1rem' }} />
+        <ErrorOutlined sx={{ color: '#ff6b6b', fontSize: '1rem' }} />
       )}
       <Typography 
         variant="body2" 

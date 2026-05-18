@@ -111,6 +111,7 @@ func main() {
 		protected.POST("/sales/returns/bulk-action", srv.PostSalesReturnsBulkAction)
 		protected.POST("/expenses/bulk-action", srv.PostExpensesBulkAction)
 		protected.POST("/categories/bulk-action", srv.PostCategoriesBulkAction)
+		protected.GET("/categories/bulk-export", srv.GetCategoriesBulkExport)
 		
 		// Cash & Bank Routes
 		protected.GET("/accounting/cash-bank/accounts", srv.GetAccountingCashBankAccounts)

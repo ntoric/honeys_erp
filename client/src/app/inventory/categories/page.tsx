@@ -25,8 +25,11 @@ import {
   Delete as DeleteIcon,
   Block as DisableIcon,
   CheckCircle as EnableIcon,
+  FileDownload as DownloadIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import CreateCategoryModal from '@/components/inventory/CreateCategoryModal';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { CategoriesService } from '@/api/services/CategoriesService';
 import { Category } from '@/api/models/Category';
 import { toast } from 'sonner';
@@ -40,6 +43,37 @@ export default function CategoriesPage() {
   const [selectionModel, setSelectionModel] = React.useState<GridRowSelectionModel>({ type: 'include', ids: new Set() });
   const [actionMenuAnchor, setActionMenuAnchor] = React.useState<null | HTMLElement>(null);
   const [activeCategory, setActiveCategory] = React.useState<Category | null>(null);
+
+  const [confirmState, setConfirmState] = React.useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    confirmColor?: 'primary' | 'secondary' | 'error' | 'warning' | 'success' | 'info';
+    onConfirm: () => void;
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+  });
+
+  const triggerConfirm = (config: {
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    confirmColor?: 'primary' | 'secondary' | 'error' | 'warning' | 'success' | 'info';
+    onConfirm: () => void;
+  }) => {
+    setConfirmState({
+      open: true,
+      ...config,
+    });
+  };
+
+  const closeConfirm = () => {
+    setConfirmState(prev => ({ ...prev, open: false }));
+  };
 
   const handleActionMenuOpen = (event: React.MouseEvent<HTMLElement>, category: Category) => {
     setActionMenuAnchor(event.currentTarget);
@@ -58,30 +92,69 @@ export default function CategoriesPage() {
     handleActionMenuClose();
   };
 
-  const handleDelete = async () => {
-    if (activeCategory?.id) {
-      try {
-        await CategoriesService.deleteCategories(activeCategory.id);
-        toast.success('Category deleted successfully');
-        fetchData();
-      } catch (error) {
-        toast.error('Failed to delete category');
-      }
+  const handleDelete = () => {
+    if (activeCategory) {
+      triggerConfirm({
+        title: 'Delete Category',
+        message: `Are you sure you want to permanently delete "${activeCategory.name}"? This action cannot be undone.`,
+        confirmLabel: 'Delete',
+        confirmColor: 'error',
+        onConfirm: async () => {
+          if (activeCategory.id) {
+            try {
+              await CategoriesService.deleteCategories(activeCategory.id);
+              toast.success('Category deleted successfully');
+              fetchData();
+            } catch (error) {
+              toast.error('Failed to delete category');
+            }
+          }
+        }
+      });
     }
     handleActionMenuClose();
   };
 
-  const handleToggleStatus = async () => {
-    if (activeCategory?.id) {
-      try {
-        await CategoriesService.putCategories(activeCategory.id, { 
-          ...activeCategory, 
-          is_active: !activeCategory.is_active 
+  const handleToggleStatus = () => {
+    if (activeCategory) {
+      const isDeactivating = activeCategory.is_active;
+      if (isDeactivating) {
+        triggerConfirm({
+          title: 'Deactivate Category',
+          message: `Are you sure you want to deactivate "${activeCategory.name}"?`,
+          confirmLabel: 'Deactivate',
+          confirmColor: 'warning',
+          onConfirm: async () => {
+            if (activeCategory.id) {
+              try {
+                await CategoriesService.putCategories(activeCategory.id, { 
+                  ...activeCategory, 
+                  is_active: false 
+                });
+                toast.success('Category deactivated successfully');
+                fetchData();
+              } catch (error) {
+                toast.error('Failed to update status');
+              }
+            }
+          }
         });
-        toast.success(`Category ${!activeCategory.is_active ? 'activated' : 'deactivated'}`);
-        fetchData();
-      } catch (error) {
-        toast.error('Failed to update status');
+      } else {
+        // Activate immediately
+        (async () => {
+          if (activeCategory.id) {
+            try {
+              await CategoriesService.putCategories(activeCategory.id, { 
+                ...activeCategory, 
+                is_active: true 
+              });
+              toast.success('Category activated successfully');
+              fetchData();
+            } catch (error) {
+              toast.error('Failed to update status');
+            }
+          }
+        })();
       }
     }
     handleActionMenuClose();
@@ -124,18 +197,80 @@ export default function CategoriesPage() {
       fetchData();
     } catch (error) {
       console.error('Failed to save category', error);
-      toast.error('Failed to save category');
+      toast.error(error instanceof Error ? error.message : 'Failed to save category');
     }
   };
 
-  const handleBulkAction = async (action: 'activate' | 'deactivate' | 'delete') => {
+  const handleBulkAction = (action: 'activate' | 'deactivate' | 'delete') => {
+    const count = selectionModel.ids.size;
+    if (action === 'delete') {
+      triggerConfirm({
+        title: 'Delete Selected Categories',
+        message: `Are you sure you want to permanently delete the ${count} selected categories? This action cannot be undone.`,
+        confirmLabel: 'Delete',
+        confirmColor: 'error',
+        onConfirm: async () => {
+          try {
+            const ids = Array.from(selectionModel.ids) as string[];
+            await CategoriesService.postCategoriesBulkAction({ action, ids });
+            toast.success(`Successfully deleted ${count} categories`);
+            setSelectionModel({ type: 'include', ids: new Set() });
+            fetchData();
+          } catch (error) {
+            toast.error('Failed to delete selected categories');
+          }
+        }
+      });
+    } else if (action === 'deactivate') {
+      triggerConfirm({
+        title: 'Deactivate Selected Categories',
+        message: `Are you sure you want to deactivate the ${count} selected categories?`,
+        confirmLabel: 'Deactivate',
+        confirmColor: 'warning',
+        onConfirm: async () => {
+          try {
+            const ids = Array.from(selectionModel.ids) as string[];
+            await CategoriesService.postCategoriesBulkAction({ action, ids });
+            toast.success(`Successfully deactivated ${count} categories`);
+            setSelectionModel({ type: 'include', ids: new Set() });
+            fetchData();
+          } catch (error) {
+            toast.error('Failed to deactivate selected categories');
+          }
+        }
+      });
+    } else {
+      // Activate immediately
+      (async () => {
+        try {
+          const ids = Array.from(selectionModel.ids) as string[];
+          await CategoriesService.postCategoriesBulkAction({ action, ids });
+          toast.success(`Successfully activated ${count} categories`);
+          setSelectionModel({ type: 'include', ids: new Set() });
+          fetchData();
+        } catch (error) {
+          toast.error('Failed to activate selected categories');
+        }
+      })();
+    }
+  };
+
+  const handleExport = async () => {
     try {
-      const ids = Array.from(selectionModel.ids) as string[];
-      await CategoriesService.postCategoriesBulkAction({ action, ids });
-      toast.success(`Bulk ${action} completed`);
-      fetchData();
+      toast.info('Exporting categories...');
+      const csvContent = await CategoriesService.getCategoriesBulkExport();
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `categories_export_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Categories exported successfully');
     } catch (error) {
-      toast.error(`Failed to perform bulk ${action}`);
+      console.error('Failed to export categories', error);
+      toast.error('Failed to export categories');
     }
   };
 
@@ -203,7 +338,7 @@ export default function CategoriesPage() {
         display: 'flex', 
         flexDirection: { xs: 'column', sm: 'row' },
         justifyContent: 'space-between', 
-        alignItems: { xs: 'flex-start', sm: 'flex-start' }, 
+        alignItems: { xs: 'flex-start', sm: 'center' }, 
         gap: 2,
         mb: 4 
       }}>
@@ -217,10 +352,32 @@ export default function CategoriesPage() {
         </Box>
         <Stack direction="row" spacing={2} sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            sx={{ 
+              borderRadius: '12px', 
+              fontWeight: 700, 
+              px: 3, 
+              borderColor: '#e2e8f0', 
+              color: '#475569',
+              height: '40px',
+              whiteSpace: 'nowrap'
+            }}
+            onClick={handleExport}
+          >
+            Export CSV
+          </Button>
+          <Button
             variant="contained"
             startIcon={<AddIcon />}
-            fullWidth
-            sx={{ borderRadius: '12px', fontWeight: 700, px: 4, py: 1.2, boxShadow: '0 8px 16px rgba(76, 59, 207, 0.2)' }}
+            sx={{ 
+              borderRadius: '12px', 
+              fontWeight: 700, 
+              px: 4, 
+              height: '40px',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 8px 16px rgba(76, 59, 207, 0.2)' 
+            }}
             onClick={() => { setSelectedRow(null); setModalOpen(true); }}
           >
             New Category
@@ -326,11 +483,11 @@ export default function CategoriesPage() {
         }}
       >
         <MenuItem onClick={handleEdit}>
-          <ListItemIcon><MoreVertIcon fontSize="small" /></ListItemIcon>
+          <ListItemIcon><EditIcon fontSize="small" sx={{ color: '#64748b' }} /></ListItemIcon>
           <ListItemText primary="Edit" />
         </MenuItem>
         <MenuItem onClick={handleToggleStatus}>
-          <ListItemIcon>{activeCategory?.is_active ? <DisableIcon fontSize="small" /> : <EnableIcon fontSize="small" />}</ListItemIcon>
+          <ListItemIcon>{activeCategory?.is_active ? <DisableIcon fontSize="small" sx={{ color: '#f59e0b' }} /> : <EnableIcon fontSize="small" sx={{ color: '#22c55e' }} format="" />}</ListItemIcon>
           <ListItemText primary={activeCategory?.is_active ? 'Deactivate' : 'Activate'} />
         </MenuItem>
         <Divider />
@@ -339,6 +496,16 @@ export default function CategoriesPage() {
           <ListItemText primary="Delete" />
         </MenuItem>
       </Menu>
+
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        confirmColor={confirmState.confirmColor}
+        onClose={closeConfirm}
+        onConfirm={confirmState.onConfirm}
+      />
     </Box>
   );
 }

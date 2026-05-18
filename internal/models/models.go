@@ -23,11 +23,12 @@ type User struct {
 
 type Category struct {
 	ID        string         `gorm:"primaryKey" json:"id"`
+	StoreID   string         `gorm:"index;uniqueIndex:idx_store_category_name;uniqueIndex:idx_store_category_sku;default:'store-default'" json:"store_id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-	Name      string         `gorm:"uniqueIndex" json:"name"`
-	SKU       string         `gorm:"uniqueIndex" json:"sku"`
+	Name      string         `gorm:"uniqueIndex:idx_store_category_name" json:"name"`
+	SKU       string         `gorm:"uniqueIndex:idx_store_category_sku" json:"sku"`
 	IsActive  bool           `gorm:"default:true" json:"is_active"`
 }
 

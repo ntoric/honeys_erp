@@ -9,6 +9,7 @@ import (
 	"pos-api/internal/sales"
 	"pos-api/internal/validator"
 	"strings"
+	"time"
 )
 
 func (s *ServerImpl) GetAccountingAccounts(c *gin.Context, params GetAccountingAccountsParams) {
@@ -169,35 +170,52 @@ func (s *ServerImpl) PostBarcodePrintLabels(c *gin.Context) {
 }
 
 func (s *ServerImpl) GetCategories(c *gin.Context, params GetCategoriesParams) {
-	var categories []models.Category
-	if err := s.db.Find(&categories).Error; err != nil {
+	storeID := s.getStoreID(c)
+	categories, err := s.categoriesService.GetCategories(storeID, params.Flat, params.ParentId)
+	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Map to OpenAPI type if necessary, but for now just return the models
-	// (Assuming the OpenAPI types match roughly or we just return JSON)
 	c.JSON(200, categories)
 }
 
 func (s *ServerImpl) PostCategories(c *gin.Context) {
+	storeID := s.getStoreID(c)
 	var cat models.Category
 	if err := c.ShouldBindJSON(&cat); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
+
+	v := validator.New()
+	v.Required("name", cat.Name, "Category Name is required")
+	if v.HasErrors() {
+		var firstErr string
+		for _, errs := range v.Errors {
+			if len(errs) > 0 {
+				firstErr = errs[0]
+				break
+			}
+		}
+		c.JSON(400, gin.H{"error": firstErr, "errors": v.Errors})
+		return
+	}
+
 	if cat.ID == "" {
 		cat.ID = uuid.New().String()
 	}
-	if err := s.db.Create(&cat).Error; err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+
+	created, err := s.categoriesService.CreateCategory(storeID, &cat)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(201, cat)
+	c.JSON(201, created)
 }
 
 func (s *ServerImpl) DeleteCategoriesId(c *gin.Context, id string) {
-	if err := s.db.Delete(&models.Category{}, "id = ?", id).Error; err != nil {
+	storeID := s.getStoreID(c)
+	if err := s.categoriesService.DeleteCategory(storeID, id); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -205,8 +223,9 @@ func (s *ServerImpl) DeleteCategoriesId(c *gin.Context, id string) {
 }
 
 func (s *ServerImpl) GetCategoriesId(c *gin.Context, id string) {
-	var cat models.Category
-	if err := s.db.First(&cat, "id = ?", id).Error; err != nil {
+	storeID := s.getStoreID(c)
+	cat, err := s.categoriesService.GetCategoryByID(storeID, id)
+	if err != nil {
 		c.JSON(404, gin.H{"error": "Category not found"})
 		return
 	}
@@ -214,27 +233,37 @@ func (s *ServerImpl) GetCategoriesId(c *gin.Context, id string) {
 }
 
 func (s *ServerImpl) PutCategoriesId(c *gin.Context, id string) {
-	var cat models.Category
-	if err := s.db.First(&cat, "id = ?", id).Error; err != nil {
-		c.JSON(404, gin.H{"error": "Category not found"})
-		return
-	}
-
+	storeID := s.getStoreID(c)
 	var update models.Category
 	if err := c.ShouldBindJSON(&update); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	update.ID = id
-	if err := s.db.Save(&update).Error; err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+	v := validator.New()
+	v.Required("name", update.Name, "Category Name is required")
+	if v.HasErrors() {
+		var firstErr string
+		for _, errs := range v.Errors {
+			if len(errs) > 0 {
+				firstErr = errs[0]
+				break
+			}
+		}
+		c.JSON(400, gin.H{"error": firstErr, "errors": v.Errors})
 		return
 	}
-	c.JSON(200, update)
+
+	updated, err := s.categoriesService.UpdateCategory(storeID, id, &update)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, updated)
 }
 
 func (s *ServerImpl) PostCategoriesBulkAction(c *gin.Context) {
+	storeID := s.getStoreID(c)
 	var body struct {
 		Action string   `json:"action"`
 		Ids    []string `json:"ids"`
@@ -244,25 +273,43 @@ func (s *ServerImpl) PostCategoriesBulkAction(c *gin.Context) {
 		return
 	}
 
-	switch body.Action {
-	case "delete":
-		if err := s.db.Delete(&models.Category{}, "id IN ?", body.Ids).Error; err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-	case "activate":
-		if err := s.db.Model(&models.Category{}).Where("id IN ?", body.Ids).Update("is_active", true).Error; err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-	case "deactivate":
-		if err := s.db.Model(&models.Category{}).Where("id IN ?", body.Ids).Update("is_active", false).Error; err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
+	if err := s.categoriesService.BulkAction(storeID, body.Action, body.Ids); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.JSON(200, gin.H{"status": "success", "message": "Action executed successfully"})
+}
+
+func (s *ServerImpl) GetCategoriesBulkExport(c *gin.Context) {
+	storeID := s.getStoreID(c)
+	categories, err := s.categoriesService.GetCategories(storeID, nil, nil)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=categories_export.csv")
+	c.Header("Content-Type", "text/csv")
+
+	var builder strings.Builder
+	builder.WriteString("ID,Name,SKU,Status,Created At,Updated At\n")
+	for _, cat := range categories {
+		status := "Inactive"
+		if cat.IsActive {
+			status = "Active"
+		}
+		builder.WriteString(fmt.Sprintf("%s,%s,%s,%s,%s,%s\n",
+			cat.ID,
+			strings.ReplaceAll(cat.Name, ",", " "),
+			strings.ReplaceAll(cat.SKU, ",", " "),
+			status,
+			cat.CreatedAt.Format(time.RFC3339),
+			cat.UpdatedAt.Format(time.RFC3339),
+		))
+	}
+
+	c.String(200, builder.String())
 }
 
 func (s *ServerImpl) GetCompany(c *gin.Context) {
